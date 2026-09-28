@@ -814,3 +814,40 @@ body {
         font-size: 1.2rem;
     }
 }
+/* ---- 设置区（BYO API key）---- */
+.input-group select {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+    background: white;
+    color: #333;
+    transition: border-color 0.3s;
+    cursor: pointer;
+}
+
+.input-group select:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.settings-row {
+    display: grid;
+    grid-template-columns: 1fr 1.4fr;
+    gap: 12px;
+}
+
+@media (max-width: 520px) {
+    .settings-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+.privacy-note {
+    font-size: 0.8rem;
+    color: #999;
+    text-align: left;
+    margin: 4px 0 12px;
+    line-height: 1.4;
+}

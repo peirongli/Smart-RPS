@@ -31,9 +31,34 @@
                 </ul>
 
                 <div class="config-section">
+                    <div class="input-group">
+                        <label for="provider-select">🔗 模型服务商:</label>
+                        <select id="provider-select">
+                            <option value="deepseek">DeepSeek</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="zhipu">智谱 GLM</option>
+                            <option value="moonshot">Moonshot Kimi</option>
+                            <option value="custom">自定义（OpenAI 兼容端点）</option>
+                        </select>
+                    </div>
+                    <div class="input-group">
+                        <label for="api-key-input">🔑 API Key:</label>
+                        <input type="password" id="api-key-input" placeholder="粘贴你的 API key（仅保存在本浏览器）" autocomplete="off">
+                    </div>
+                    <div class="settings-row">
+                        <div class="input-group">
+                            <label for="model-input">🤖 模型名:</label>
+                            <input type="text" id="model-input" placeholder="如 deepseek-chat">
+                        </div>
+                        <div class="input-group">
+                            <label for="base-url-input">🌐 Base URL:</label>
+                            <input type="text" id="base-url-input" placeholder="如 https://api.deepseek.com/v1">
+                        </div>
+                    </div>
+                    <p class="privacy-note">API key 仅保存在本浏览器 localStorage，请求直连你选择的服务商，不经过任何中间服务器。</p>
                     <div class="input-group highlight">
                         <label for="playerName">🎮 玩家昵称:</label>
-                        <input type="text" id="playerName" placeholder="输入你的昵称开始游戏" value="" required>
+                        <input type="text" id="playerName" placeholder="输入你的昵称开始游戏" value="">
                     </div>
                 </div>
 
@@ -170,6 +195,7 @@
             <div class="game-history">
                 <button id="toggle-history" class="btn btn-secondary">📊 查看历史</button>
                 <button id="show-help" class="btn btn-secondary">❓ 游戏帮助</button>
+                <button id="reset-game" class="btn btn-secondary">🔄 重新开局</button>
                 <div id="history-panel" class="history-panel">
                     <h4>游戏历史</h4>
                     <div id="history-list" class="history-list"></div>
