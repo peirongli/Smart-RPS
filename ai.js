@@ -216,6 +216,8 @@ export function declarationOnly(text, aiDeclared) {
             part = part.replace(new RegExp(kw + '[：:]?\\s*[石头布剪刀]+', 'g'), '');
         }
     }
+    // "我实际出"被切断时，切割点左侧会残留一个"我"
+    part = part.replace(/[\s，,]*我\s*$/, '').trim();
     if (!/[。～！]$/.test(part)) part += '。';
     if (aiDeclared !== 'secret') part += ' 现在我们同时出拳吧！';
     return part;

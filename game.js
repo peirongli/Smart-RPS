@@ -45,7 +45,7 @@ class RockPaperScissorsGame {
         try {
             const saved = JSON.parse(localStorage.getItem(SAVE_KEY));
             if (saved && Array.isArray(saved.history)) {
-                this.state.round = (saved.round || saved.history.length + 1);
+                this.state.round = Math.max(saved.round || 0, saved.history.length + 1);
                 this.state.playerScore = saved.playerScore || 0;
                 this.state.aiScore = saved.aiScore || 0;
                 this.state.playerName = saved.playerName || '玩家';
