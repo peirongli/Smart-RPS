@@ -1,0 +1,7 @@
+.DS_Store
+node_modules/
+.vscode/
+dist/
+
+# 本地配置（含凭据，勿提交；新版已改用界面内设置）
+config.js

@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>表情包测试</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div style="padding: 50px; text-align: center;">
+        <h1>表情包功能测试</h1>
+        <button onclick="showMeme1()" style="margin: 10px; padding: 15px 30px; font-size: 16px;">
+            测试"你看"表情包
+        </button>
+        <button onclick="showMeme2()" style="margin: 10px; padding: 15px 30px; font-size: 16px;">
+            测试"逗你"表情包
+        </button>
+    </div>
+
+    <!-- 表情包弹出 -->
+    <div id="meme-overlay" class="meme-overlay"></div>
+    <div id="meme-popup" class="meme-popup">
+        <img id="meme-image" src="" alt="表情包">
+        <div id="meme-text" class="meme-text"></div>
+        <button id="close-meme" class="close-btn">知道了</button>
+    </div>
+
+    <script>
+        function showMeme1() {
+            showMemePopup('images/你看.jpg', '你看, 说实话你都不信');
+        }
+
+        function showMeme2() {
+            showMemePopup('images/逗你.jpg', '逗逗你的啊');
+        }
+
+        function showMemePopup(imagePath, text) {
+            const overlay = document.getElementById('meme-overlay');
+            const popup = document.getElementById('meme-popup');
+            const image = document.getElementById('meme-image');
+            const textEl = document.getElementById('meme-text');
+
+            const img = new Image();
+            img.onload = () => {
+                image.src = imagePath;
+                textEl.textContent = text;
+
+                overlay.classList.add('show');
+                popup.classList.add('show');
+                
+                if (navigator.vibrate) {
+                    navigator.vibrate([100, 50, 100]);
+                }
+            };
+            img.src = imagePath;
+        }
+
+        function hideMemePopup() {
+            const overlay = document.getElementById('meme-overlay');
+            const popup = document.getElementById('meme-popup');
+
+            overlay.classList.remove('show');
+            popup.classList.remove('show');
+        }
+
+        // 事件监听器
+        document.getElementById('close-meme').addEventListener('click', hideMemePopup);
+        document.getElementById('meme-overlay').addEventListener('click', hideMemePopup);
+    </script>
+</body>
+</html>

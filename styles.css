@@ -1,0 +1,816 @@
+/* 全局样式 */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    font-family: 'Poppins', sans-serif;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    min-height: 100vh;
+    color: #333;
+    overflow-x: hidden;
+}
+
+.game-container {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+}
+
+/* 游戏标题 */
+.game-header {
+    text-align: center;
+    margin-bottom: 30px;
+    color: white;
+}
+
+.game-header h1 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 10px;
+    text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+}
+
+.subtitle {
+    font-size: 1.1rem;
+    opacity: 0.9;
+    font-weight: 300;
+}
+
+/* 屏幕切换 */
+.screen {
+    display: none;
+    flex: 1;
+}
+
+.screen.active {
+    display: flex;
+    flex-direction: column;
+}
+
+/* 初始化界面 */
+.init-content {
+    background: white;
+    border-radius: 20px;
+    padding: 40px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+    text-align: center;
+    max-width: 600px;
+    margin: 0 auto;
+}
+
+.logo {
+    font-size: 4rem;
+    margin-bottom: 20px;
+}
+
+.init-content h2 {
+    font-size: 2rem;
+    margin-bottom: 20px;
+    color: #333;
+}
+
+.rules-list {
+    text-align: left;
+    margin: 20px 0;
+    padding-left: 20px;
+}
+
+.rules-list li {
+    margin: 10px 0;
+    font-size: 1.1rem;
+}
+
+.config-section {
+    margin: 30px 0;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 10px;
+}
+
+.config-section h3 {
+    margin-bottom: 20px;
+    color: #555;
+}
+
+.config-tip {
+    background: #e3f2fd;
+    border: 1px solid #2196f3;
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 20px;
+    font-size: 0.9rem;
+    color: #1565c0;
+}
+
+.config-tip.success {
+    background: #e8f5e8;
+    border: 1px solid #4caf50;
+    color: #2e7d32;
+}
+
+.config-tip code {
+    background: #fff;
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-family: 'Courier New', monospace;
+    color: #d32f2f;
+}
+
+.input-group {
+    margin-bottom: 15px;
+    text-align: left;
+}
+
+.input-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: 600;
+    color: #555;
+}
+
+.input-group input {
+    width: 100%;
+    padding: 12px;
+    border: 2px solid #ddd;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: border-color 0.3s;
+}
+
+.input-group input:focus {
+    outline: none;
+    border-color: #667eea;
+}
+
+.input-group.highlight {
+    background: #f8f9ff;
+    border: 2px solid #667eea;
+    border-radius: 12px;
+    padding: 20px;
+    margin: 20px 0;
+}
+
+.input-group.highlight label {
+    color: #667eea;
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.input-group.highlight input {
+    border: 2px solid #667eea;
+    background: white;
+    font-size: 1.1rem;
+    padding: 15px;
+}
+
+/* 按钮样式 */
+.btn {
+    padding: 12px 24px;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.btn-primary {
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+}
+
+.btn-primary:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.2);
+}
+
+.btn-secondary {
+    background: #6c757d;
+    color: white;
+}
+
+.btn-secondary:hover {
+    background: #5a6268;
+}
+
+/* 状态消息 */
+.status-message {
+    margin-top: 20px;
+    padding: 10px;
+    border-radius: 5px;
+    font-weight: 500;
+}
+
+.status-message.loading {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.status-message.error {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.status-message.success {
+    background: #d4edda;
+    color: #155724;
+}
+
+/* 游戏主界面 */
+#game-screen {
+    background: white;
+    border-radius: 20px;
+    padding: 30px;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+}
+
+/* 比分板 */
+.scoreboard {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    margin-bottom: 30px;
+    padding: 20px;
+    background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+    border-radius: 15px;
+    color: white;
+}
+
+.score-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 120px;
+}
+
+.score-label {
+    font-size: 1.1rem;
+    margin-bottom: 5px;
+    font-weight: 600;
+}
+
+.score-value {
+    font-size: 2.5rem;
+    font-weight: 700;
+}
+
+.score-divider {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin: 0 30px;
+}
+
+/* 游戏状态 */
+.game-status {
+    text-align: center;
+    margin-bottom: 30px;
+}
+
+.round-info {
+    font-size: 1.3rem;
+    font-weight: 600;
+    color: #667eea;
+    margin-bottom: 10px;
+}
+
+.game-phase {
+    font-size: 1.1rem;
+    color: #666;
+}
+
+/* 对话区域 */
+.chat-area {
+    margin-bottom: 30px;
+    max-height: 200px;
+    overflow-y: auto;
+    border: 2px solid #f0f0f0;
+    border-radius: 10px;
+    padding: 15px;
+    background: #fafafa;
+    scroll-behavior: smooth;
+}
+
+/* 自定义滚动条样式 */
+.chat-area::-webkit-scrollbar {
+    width: 8px;
+}
+
+.chat-area::-webkit-scrollbar-track {
+    background: #f1f1f1;
+    border-radius: 4px;
+}
+
+.chat-area::-webkit-scrollbar-thumb {
+    background: #c1c1c1;
+    border-radius: 4px;
+}
+
+.chat-area::-webkit-scrollbar-thumb:hover {
+    background: #a8a8a8;
+}
+
+.chat-messages {
+    display: flex;
+    flex-direction: column;
+    gap: 15px;
+    scroll-behavior: smooth;
+}
+
+.message {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+.message.player-message {
+    flex-direction: row-reverse;
+}
+
+.message-avatar {
+    font-size: 1.5rem;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: white;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.message-content {
+    flex: 1;
+    max-width: 70%;
+}
+
+.message-text {
+    background: white;
+    padding: 12px 16px;
+    border-radius: 15px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+    font-size: 0.95rem;
+    line-height: 1.4;
+}
+
+.player-message .message-text {
+    background: #667eea;
+    color: white;
+}
+
+/* 动作阶段 */
+.action-phase {
+    display: none;
+    text-align: center;
+    padding: 30px;
+    background: #f8f9fa;
+    border-radius: 15px;
+    margin-bottom: 20px;
+}
+
+.action-phase.active {
+    display: block;
+}
+
+.action-phase h3 {
+    font-size: 1.5rem;
+    margin-bottom: 10px;
+    color: #333;
+}
+
+.action-phase p {
+    font-size: 1.1rem;
+    color: #666;
+    margin-bottom: 30px;
+}
+
+/* 选择按钮 */
+.choice-buttons {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+.choice-btn {
+    background: white;
+    border: 3px solid #ddd;
+    border-radius: 15px;
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.3s;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    min-width: 120px;
+}
+
+.choice-btn:hover {
+    border-color: #667eea;
+    transform: translateY(-5px);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+}
+
+.choice-btn.selected {
+    border-color: #667eea;
+    background: #f0f4ff;
+}
+
+.choice-btn img {
+    width: 60px;
+    height: 60px;
+    object-fit: contain;
+}
+
+.choice-btn span {
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: #333;
+}
+
+/* 保密选项特殊样式 */
+.choice-btn.secret-choice {
+    background: linear-gradient(135deg, #ff9a9e 0%, #fecfef 100%);
+    border-color: #ff6b9d;
+}
+
+.choice-btn.secret-choice:hover {
+    border-color: #ff4081;
+    background: linear-gradient(135deg, #ff6b9d 0%, #ff9a9e 100%);
+}
+
+.secret-icon {
+    font-size: 3rem;
+    margin-bottom: 5px;
+}
+
+/* 加载动画 */
+.loading-spinner {
+    font-size: 3rem;
+    animation: spin 2s linear infinite;
+    margin-bottom: 20px;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+/* 战斗结果 */
+.battle-result {
+    text-align: center;
+}
+
+.battle-display {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 30px;
+    padding: 20px;
+    background: white;
+    border-radius: 15px;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+}
+
+.player-choice, .ai-choice {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 15px;
+}
+
+.choice-header {
+    text-align: center;
+}
+
+.choice-label {
+    font-size: 1.2rem;
+    font-weight: 600;
+    color: #333;
+    display: block;
+    margin-bottom: 10px;
+}
+
+.choice-details {
+    font-size: 0.9rem;
+    color: #666;
+}
+
+.choice-details .declared {
+    margin-bottom: 5px;
+}
+
+.choice-image img {
+    width: 80px;
+    height: 80px;
+    object-fit: contain;
+}
+
+.vs-section {
+    flex: 0 0 auto;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 10px;
+    margin: 0 20px;
+}
+
+.vs-text {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #667eea;
+}
+
+.result-text {
+    font-size: 1.3rem;
+    font-weight: 600;
+    padding: 10px 20px;
+    border-radius: 20px;
+    white-space: nowrap;
+}
+
+.result-text.win {
+    background: #d4edda;
+    color: #155724;
+}
+
+.result-text.lose {
+    background: #f8d7da;
+    color: #721c24;
+}
+
+.result-text.draw {
+    background: #fff3cd;
+    color: #856404;
+}
+
+/* 游戏历史 */
+.game-history {
+    margin-top: 30px;
+    text-align: center;
+}
+
+.history-panel {
+    display: none;
+    margin-top: 20px;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    text-align: left;
+}
+
+.history-panel.active {
+    display: block;
+}
+
+.history-panel h4 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.history-list {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.history-item {
+    padding: 10px;
+    margin-bottom: 10px;
+    background: white;
+    border-radius: 8px;
+    border-left: 4px solid #667eea;
+    font-size: 0.9rem;
+}
+
+.history-item .round {
+    font-weight: 600;
+    color: #667eea;
+}
+
+.history-item .details {
+    margin-top: 5px;
+    color: #666;
+}
+
+/* 模态框 */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.5);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+}
+
+.modal.active {
+    display: flex;
+}
+
+.modal-content {
+    background: white;
+    padding: 30px;
+    border-radius: 15px;
+    text-align: center;
+    max-width: 400px;
+    margin: 20px;
+}
+
+.modal-content h3 {
+    margin-bottom: 15px;
+    color: #333;
+}
+
+.modal-content p {
+    margin-bottom: 20px;
+    color: #666;
+}
+
+/* 响应式设计 */
+@media (max-width: 768px) {
+    .game-container {
+        padding: 10px;
+    }
+    
+    .game-header h1 {
+        font-size: 2rem;
+    }
+    
+    .init-content {
+        padding: 20px;
+    }
+    
+    .choice-buttons {
+        gap: 10px;
+    }
+    
+    .choice-btn {
+        min-width: 100px;
+        padding: 15px;
+    }
+    
+    .choice-btn img {
+        width: 50px;
+        height: 50px;
+    }
+    
+    .battle-display {
+        flex-direction: column;
+        gap: 20px;
+    }
+    
+    .vs-section {
+        margin: 0;
+    }
+    
+    .scoreboard {
+        flex-direction: column;
+        gap: 10px;
+    }
+    
+    .score-divider {
+        margin: 0;
+    }
+}
+
+@media (max-width: 480px) {
+    .choice-buttons {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .choice-btn {
+        width: 200px;
+    }
+}
+
+/* 表情包弹出样式 */
+.meme-popup {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) scale(0) rotate(-10deg);
+    z-index: 2000;
+    background: white;
+    border-radius: 20px;
+    padding: 30px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    text-align: center;
+    max-width: 400px;
+    opacity: 0;
+    transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+    border: 3px solid #ff6b9d;
+}
+
+.meme-popup.show {
+    transform: translate(-50%, -50%) scale(1) rotate(0deg);
+    opacity: 1;
+    animation: bounce 0.6s ease-out 0.5s;
+}
+
+@keyframes bounce {
+    0%, 20%, 50%, 80%, 100% {
+        transform: translate(-50%, -50%) scale(1) rotate(0deg);
+    }
+    40% {
+        transform: translate(-50%, -50%) scale(1.05) rotate(1deg);
+    }
+    60% {
+        transform: translate(-50%, -50%) scale(1.02) rotate(-0.5deg);
+    }
+}
+
+.meme-popup img {
+    width: 220px;
+    height: 220px;
+    object-fit: cover;
+    border-radius: 15px;
+    margin-bottom: 20px;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    transition: transform 0.3s ease;
+}
+
+.meme-popup img:hover {
+    transform: scale(1.05);
+}
+
+.meme-popup .meme-text {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: #333;
+    margin-bottom: 25px;
+    line-height: 1.4;
+    text-shadow: 1px 1px 2px rgba(0,0,0,0.1);
+    background: linear-gradient(135deg, #ff6b9d, #667eea);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.meme-popup .close-btn {
+    background: linear-gradient(135deg, #ff6b9d 0%, #667eea 100%);
+    color: white;
+    border: none;
+    padding: 15px 30px;
+    border-radius: 25px;
+    font-size: 1.1rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s;
+    box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+}
+
+.meme-popup .close-btn:hover {
+    transform: translateY(-3px);
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+}
+
+.meme-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0,0,0,0.6);
+    z-index: 1999;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s;
+    backdrop-filter: blur(3px);
+}
+
+.meme-overlay.show {
+    opacity: 1;
+    visibility: visible;
+}
+
+/* 响应式表情包 */
+@media (max-width: 480px) {
+    .meme-popup {
+        max-width: 320px;
+        padding: 20px;
+        margin: 20px;
+    }
+    
+    .meme-popup img {
+        width: 180px;
+        height: 180px;
+    }
+    
+    .meme-popup .meme-text {
+        font-size: 1.2rem;
+    }
+}

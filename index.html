@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>石头剪刀布心理博弈 - AI对战</title>
+    <link rel="stylesheet" href="styles.css">
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="game-container">
+        <!-- 游戏标题 -->
+        <header class="game-header">
+            <h1>🧠 石头剪刀布心理博弈</h1>
+            <p class="subtitle">与AI进行策略对决，先宣告再出拳！</p>
+        </header>
+
+        <!-- 初始化界面 -->
+        <div id="init-screen" class="screen active">
+            <div class="init-content">
+                <div class="logo">🎮</div>
+                <h2>欢迎来到智能猜拳</h2>
+                <p>在这个特殊的猜拳游戏中，你需要：</p>
+                <ul class="rules-list">
+                    <li>🗣️ 先告诉AI你要出什么（可以虚晃一枪或保密）</li>
+                    <li>🤖 AI也会告诉你它的计划（或选择保密）</li>
+                    <li>✊ 然后双方同时出拳</li>
+                    <li>🏆 根据实际出拳判定胜负</li>
+                </ul>
+
+                <div class="config-section">
+                    <div class="input-group highlight">
+                        <label for="playerName">🎮 玩家昵称:</label>
+                        <input type="text" id="playerName" placeholder="输入你的昵称开始游戏" value="" required>
+                    </div>
+                </div>
+
+                <button id="start-game" class="btn btn-primary">🎮 开始游戏</button>
+                <div id="init-status" class="status-message"></div>
+            </div>
+        </div>
+
+        <!-- 游戏主界面 -->
+        <div id="game-screen" class="screen">
+            <!-- 比分板 -->
+            <div class="scoreboard">
+                <div class="score-item player-score">
+                    <span class="score-label">🧑 <span id="player-name-display">玩家</span></span>
+                    <span class="score-value" id="player-score">0</span>
+                </div>
+                <div class="score-divider">VS</div>
+                <div class="score-item ai-score">
+                    <span class="score-label">🤖 AI</span>
+                    <span class="score-value" id="ai-score">0</span>
+                </div>
+            </div>
+
+            <!-- 游戏状态 -->
+            <div class="game-status">
+                <div id="round-info" class="round-info">第 1 轮</div>
+                <div id="game-phase" class="game-phase">等待你的宣告...</div>
+            </div>
+
+            <!-- 对话区域 -->
+            <div class="chat-area">
+                <div id="chat-messages" class="chat-messages">
+                    <div class="message ai-message">
+                        <div class="message-avatar">🤖</div>
+                        <div class="message-content">
+                            <div class="message-text">
+                                嗨！我们来玩特殊猜拳吧～规则很简单：每轮先各自说要出什么（可以骗对方或选择保密），再亮实际出拳，按实际的算输赢～你先说说，这轮打算宣告出什么呀？</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 宣告阶段 -->
+            <div id="declare-phase" class="action-phase active">
+                <h3>🗣️ 你的宣告</h3>
+                <p>告诉AI你打算出什么（可以撒谎哦）：</p>
+                <div class="choice-buttons">
+                    <button class="choice-btn" data-choice="rock">
+                        <img src="images/rock.png" alt="石头">
+                        <span>石头</span>
+                    </button>
+                    <button class="choice-btn" data-choice="paper">
+                        <img src="images/paper.png" alt="布">
+                        <span>布</span>
+                    </button>
+                    <button class="choice-btn" data-choice="scissors">
+                        <img src="images/scissors.png" alt="剪刀">
+                        <span>剪刀</span>
+                    </button>
+                    <button class="choice-btn secret-choice" data-choice="secret">
+                        <div class="secret-icon">🤫</div>
+                        <span>不告诉你</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 等待AI回应 -->
+            <div id="waiting-ai" class="action-phase">
+                <div class="loading-spinner">🤖</div>
+                <p>AI正在思考它的策略...</p>
+            </div>
+
+            <!-- 实际出拳阶段 -->
+            <div id="action-phase" class="action-phase">
+                <h3>✊ 实际出拳</h3>
+                <p>现在选择你真正要出的：</p>
+                <div class="choice-buttons">
+                    <button class="choice-btn" data-choice="rock">
+                        <img src="images/rock.png" alt="石头">
+                        <span>石头</span>
+                    </button>
+                    <button class="choice-btn" data-choice="paper">
+                        <img src="images/paper.png" alt="布">
+                        <span>布</span>
+                    </button>
+                    <button class="choice-btn" data-choice="scissors">
+                        <img src="images/scissors.png" alt="剪刀">
+                        <span>剪刀</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 结果展示 -->
+            <div id="result-phase" class="action-phase">
+                <div class="battle-result">
+                    <div class="battle-display">
+                        <div class="player-choice">
+                            <div class="choice-header">
+                                <span class="choice-label">你的选择</span>
+                                <div class="choice-details">
+                                    <div class="declared">宣告: <span id="player-declared"></span></div>
+                                    <div class="actual">实际: <span id="player-actual"></span></div>
+                                </div>
+                            </div>
+                            <div class="choice-image">
+                                <img id="player-choice-img" src="" alt="">
+                            </div>
+                        </div>
+
+                        <div class="vs-section">
+                            <div class="vs-text">VS</div>
+                            <div id="result-text" class="result-text"></div>
+                        </div>
+
+                        <div class="ai-choice">
+                            <div class="choice-header">
+                                <span class="choice-label">AI的选择</span>
+                                <div class="choice-details">
+                                    <div class="declared">宣告: <span id="ai-declared"></span></div>
+                                    <div class="actual">实际: <span id="ai-actual"></span></div>
+                                </div>
+                            </div>
+                            <div class="choice-image">
+                                <img id="ai-choice-img" src="" alt="">
+                            </div>
+                        </div>
+                    </div>
+
+                    <button id="next-round" class="btn btn-primary">下一轮</button>
+                </div>
+            </div>
+
+            <!-- 游戏历史和帮助 -->
+            <div class="game-history">
+                <button id="toggle-history" class="btn btn-secondary">📊 查看历史</button>
+                <button id="show-help" class="btn btn-secondary">❓ 游戏帮助</button>
+                <div id="history-panel" class="history-panel">
+                    <h4>游戏历史</h4>
+                    <div id="history-list" class="history-list"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 错误提示 -->
+        <div id="error-modal" class="modal">
+            <div class="modal-content">
+                <h3>❌ 出错了</h3>
+                <p id="error-message"></p>
+                <button id="close-error" class="btn btn-primary">确定</button>
+            </div>
+        </div>
+
+        <!-- 游戏帮助 -->
+        <div id="help-modal" class="modal">
+            <div class="modal-content" style="max-width: 600px;">
+                <h3>🎯 游戏帮助</h3>
+                <div style="text-align: left; margin: 20px 0;">
+                    <h4>🎮 游戏规则：</h4>
+                    <ul>
+                        <li><strong>宣告阶段</strong>：告诉AI你要出什么（可以撒谎或选择保密）</li>
+                        <li><strong>AI回应</strong>：AI告诉你它的计划（也可能撒谎或保密）</li>
+                        <li><strong>实际出拳</strong>：选择你真正要出的</li>
+                        <li><strong>结果判定</strong>：根据实际出拳判定胜负</li>
+                    </ul>
+
+                    <h4>🧠 策略技巧：</h4>
+                    <ul>
+                        <li><strong>观察AI</strong>：注意AI的诚实度和行为模式</li>
+                        <li><strong>混合策略</strong>：时而诚实，时而欺骗，时而保密</li>
+                        <li><strong>心理战</strong>：建立假的行为模式迷惑AI</li>
+                        <li><strong>保密策略</strong>：适时选择"不告诉你"增加不确定性</li>
+                        <li><strong>适应性</strong>：根据AI的反应调整策略</li>
+                    </ul>
+
+                    <h4>🏆 胜负规则：</h4>
+                    <p>石头✊ 克 剪刀✌️，剪刀✌️ 克 布✋，布✋ 克 石头✊</p>
+                </div>
+                <button id="close-help" class="btn btn-primary">知道了</button>
+            </div>
+        </div>
+
+        <!-- 表情包弹出 -->
+        <div id="meme-overlay" class="meme-overlay"></div>
+        <div id="meme-popup" class="meme-popup">
+            <img id="meme-image" src="" alt="表情包">
+            <div id="meme-text" class="meme-text"></div>
+            <button id="close-meme" class="close-btn">知道了</button>
+        </div>
+    </div>
+
+    <!-- 引入SDK和游戏逻辑 -->
+    <script type="module" src="game.js"></script>
+</body>
+
+</html>

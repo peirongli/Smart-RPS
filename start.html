@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>启动石头剪刀布心理博弈游戏</title>
+    <style>
+        body {
+            font-family: 'Arial', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            color: white;
+        }
+        .container {
+            text-align: center;
+            background: rgba(255,255,255,0.1);
+            padding: 40px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1);
+        }
+        h1 {
+            font-size: 2.5rem;
+            margin-bottom: 20px;
+        }
+        .warning {
+            background: rgba(255,193,7,0.2);
+            border: 2px solid #ffc107;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        .btn {
+            display: inline-block;
+            padding: 15px 30px;
+            background: white;
+            color: #667eea;
+            text-decoration: none;
+            border-radius: 10px;
+            font-weight: bold;
+            font-size: 1.1rem;
+            margin: 10px;
+            transition: transform 0.3s;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+        }
+        .instructions {
+            text-align: left;
+            margin: 20px 0;
+        }
+        .instructions ol {
+            padding-left: 20px;
+        }
+        .instructions li {
+            margin: 10px 0;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧠 石头剪刀布心理博弈</h1>
+        
+        <div class="warning">
+            <h3>⚠️ 重要提示</h3>
+            <p>由于浏览器安全限制，此游戏需要通过本地服务器运行。</p>
+        </div>
+        
+        <div class="instructions">
+            <h3>🚀 启动方法：</h3>
+            <ol>
+                <li><strong>Python 用户：</strong><br>
+                    在此文件夹中打开终端，运行：<br>
+                    <code>python -m http.server 8000</code><br>
+                    然后访问：<a href="http://localhost:8000" target="_blank">http://localhost:8000</a>
+                </li>
+                <li><strong>Node.js 用户：</strong><br>
+                    运行：<code>npx serve .</code><br>
+                    然后访问显示的地址
+                </li>
+                <li><strong>VS Code 用户：</strong><br>
+                    安装 Live Server 扩展<br>
+                    右键 index.html → Open with Live Server
+                </li>
+                <li><strong>PHP 用户：</strong><br>
+                    运行：<code>php -S localhost:8000</code><br>
+                    然后访问：<a href="http://localhost:8000" target="_blank">http://localhost:8000</a>
+                </li>
+            </ol>
+        </div>
+        
+        <div style="margin-top: 30px;">
+            <h3>📋 准备工作：</h3>
+            <p>1. 获取 DeveloperWorks API 密钥</p>
+            <p>2. 在 <code>config.js</code> 中填入配置（推荐）</p>
+            <p>3. 启动本地服务器</p>
+            <p>4. 开始游戏</p>
+        </div>
+        
+        <a href="check-config.html" class="btn">🔧 检查配置</a>
+        <a href="README.md" class="btn">📖 查看详细说明</a>
+        <a href="https://developerworks.agentlandlab.com" class="btn" target="_blank">🔑 获取API密钥</a>
+    </div>
+    
+    <script>
+        // 检测是否通过本地服务器访问
+        if (location.protocol === 'file:') {
+            document.body.innerHTML += `
+                <div style="position: fixed; top: 0; left: 0; right: 0; background: #dc3545; color: white; padding: 10px; text-align: center; z-index: 1000;">
+                    ❌ 检测到直接打开文件，游戏可能无法正常运行。请使用本地服务器！
+                </div>
+            `;
+        }
+    </script>
+</body>
+</html>
