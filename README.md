@@ -133,6 +133,43 @@ node dev/static-server.mjs 8000 &
 node dev/screenshot.mjs   # 输出到 docs/screenshots/
 ```
 
+## 真实模型效果验证（需自带 key）
+
+mock 测不出 AI 的**行为效果**——它的回复与上下文无关。这个脚本专门补这块：
+
+```bash
+# 1) 复制模板并填入 key
+cp .env.example .env      # 然后编辑 .env 填入 DEEPSEEK_API_KEY
+
+# 2) 起服务
+node dev/mock-server.mjs &
+node dev/static-server.mjs 8000 &
+
+# 3) 跑验证（三档难度 × 20 轮，约 60 次请求）
+node dev/verify-live.mjs
+```
+
+省钱用 `LIVE_ROUNDS=10`（约 30 次请求）。换服务商：
+
+```bash
+LIVE_PROVIDER=openai OPENAI_API_KEY=sk-xxx node dev/verify-live.mjs
+```
+
+它检验的是：
+
+| 检验项 | 通过标准 |
+|---|---|
+| taunt 是否针对具体轮次 | 多数 taunt 提及玩家，而非泛泛嘲讽 |
+| 三档诚实率趋势 | 读心者的宣告≠实际比例应高于熟客 |
+| 读心者是否引用画像 | taunt 里出现具体规律，而非"我猜你要出布" |
+| 随机化后是否认输 | 玩家掺随机后，读心者停止断言式读心 |
+| 是否碾压玩家 | 玩家胜率须 > 20%，否则劝退 |
+| 格式合规率 | 每轮都有非空 taunt，无 XSS 迹象 |
+
+key 只从 `.env` 或环境变量读，两种方式都**不入库**（`.gitignore` 已排除 `.env`）。
+
+---
+
 ## 项目结构
 
 ```
@@ -143,6 +180,7 @@ node dev/screenshot.mjs   # 输出到 docs/screenshots/
 ├── game.js              # 状态机、规则、持久化、难度分级注入
 ├── ui.js                # DOM 渲染与事件绑定
 ├── images/              # 出拳图与表情包素材
+├── .env.example         # 真实模型验证的凭据模板（复制成 .env 后填 key）
 └── dev/
     ├── mock-server.mjs      # 本地 mock
     ├── static-server.mjs    # 零依赖静态服务器
@@ -150,6 +188,7 @@ node dev/screenshot.mjs   # 输出到 docs/screenshots/
     ├── test-profile.mjs     # 博弈画像测试（30 项）
     ├── e2e-check.mjs        # 端到端浏览器验证（21 项）
     ├── verify-design.mjs    # 设计落地验证（28 项，30 轮 × 三档）
+    ├── verify-live.mjs      # 真实模型效果验证（需 key）
     ├── check.sh             # 全部质量门禁
     └── screenshot.mjs       # 界面截图
 ```

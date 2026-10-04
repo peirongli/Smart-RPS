@@ -10,33 +10,62 @@
 //   3. 三档难度的行为差异是否真实（不只是 prompt 文本不同）
 //   4. 宣告与 actual 的一致率是否符合各档的 honestBias
 //   5. 格式合规率（JSON 三段式是否稳定输出、是否触发重问）
-//   6. 连败时读心者是否会认输
+//   6. 玩家随机化后读心者是否会认输
 //
-// 用法：
-//   DEEPSEEK_API_KEY=sk-xxx node dev/verify-live.mjs
-//   # 或指定其它服务商：
-//   LIVE_PROVIDER=openai OPENAI_API_KEY=sk-xxx node dev/verify-live.mjs
-//   # 减少轮数（省钱）：
-//   LIVE_ROUNDS=10 node dev/verify-live.mjs
+// 用法（三选一）：
+//   1) 填好项目根目录的 .env，然后：
+//        node dev/mock-server.mjs &
+//        node dev/static-server.mjs 8000 &
+//        node dev/verify-live.mjs
+//   2) 终端里一次性设：
+//        DEEPSEEK_API_KEY=sk-xxx node dev/verify-live.mjs
+//   3) 换服务商：
+//        LIVE_PROVIDER=openai OPENAI_API_KEY=sk-xxx node dev/verify-live.mjs
 //
-// 警告：会真的花钱。ROUNDS × 档数 = 请求数。
+// 省钱：LIVE_ROUNDS=10 node dev/verify-live.mjs
+// 警告：会真的花钱。ROUNDS × 3 档 = 请求数。
 
 import { chromium } from '/Users/lipeirong/node_modules/playwright/index.mjs';
+import { readFileSync, existsSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+
+// 先读 .env（不覆盖已存在的环境变量）
+const envPath = fileURLToPath(new URL('../.env', import.meta.url));
+if (existsSync(envPath)) {
+    for (const line of readFileSync(envPath, 'utf8').split('\n')) {
+        const m = line.match(/^\s*([A-Z_][A-Z0-9_]*)\s*=\s*(.*)\s*$/i);
+        if (!m) continue;
+        const [, key, val] = m;
+        if (!val || val.startsWith('#')) continue;   // 空值或注释 → 跳过
+        if (process.env[key] === undefined) process.env[key] = val;
+    }
+}
 
 const ROUNDS = Number(process.env.LIVE_ROUNDS || 20);
 const PROVIDERS = {
-    deepseek: { key: 'DEEPSEEK_API_KEY', baseUrl: 'https://api.deepseek.com/v1', model: 'deepseek-chat' },
-    openai: { key: 'OPENAI_API_KEY', baseUrl: 'https://api.openai.com/v1', model: 'gpt-4o-mini' },
-    zhipu: { key: 'ZHIPU_API_KEY', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: 'glm-4-flash' },
-    moonshot: { key: 'MOONSHOT_API_KEY', baseUrl: 'https://api.moonshot.cn/v1', model: 'moonshot-v1-8k' },
+    deepseek: { key: 'DEEPSEEK_API_KEY', baseUrl: 'https://api.deepseek.com/v1', model: process.env.LIVE_MODEL || 'deepseek-chat' },
+    openai: { key: 'OPENAI_API_KEY', baseUrl: 'https://api.openai.com/v1', model: process.env.LIVE_MODEL || 'gpt-4o-mini' },
+    zhipu: { key: 'ZHIPU_API_KEY', baseUrl: 'https://open.bigmodel.cn/api/paas/v4', model: process.env.LIVE_MODEL || 'glm-4-flash' },
+    moonshot: { key: 'MOONSHOT_API_KEY', baseUrl: 'https://api.moonshot.cn/v1', model: process.env.LIVE_MODEL || 'moonshot-v1-8k' },
 };
 const which = process.env.LIVE_PROVIDER || 'deepseek';
 const conf = PROVIDERS[which];
+if (!conf) {
+    console.error(`未知的 LIVE_PROVIDER：${which}。可选：${Object.keys(PROVIDERS).join(' / ')}`);
+    process.exit(2);
+}
 const apiKey = process.env[conf.key];
 
 if (!apiKey) {
-    console.error(`缺少环境变量 ${conf.key}`);
-    console.error('用法：DEEPSEEK_API_KEY=sk-xxx node dev/verify-live.mjs');
+    console.error(`没有可用的 key。`);
+    console.error('');
+    console.error(`方式 1：填好项目根目录的 .env（可从 .env.example 复制），需要这一行：`);
+    console.error(`    ${conf.key}=sk-你的key`);
+    console.error('');
+    console.error(`方式 2：终端里一次性设：`);
+    console.error(`    ${conf.key}=sk-xxx node dev/verify-live.mjs`);
+    console.error('');
+    console.error(`换服务商：LIVE_PROVIDER=openai OPENAI_API_KEY=sk-xxx node dev/verify-live.mjs`);
     process.exit(2);
 }
 

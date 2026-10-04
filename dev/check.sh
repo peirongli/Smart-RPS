@@ -61,7 +61,7 @@ if [ $STATUS -eq 0 ]; then
         $NODE dev/verify-design.mjs
         STATUS=$?
     else
-        echo "  已跳过（--fast）"
+        echo "  SKIPPED（--fast）—— 本层未运行，不代表已验证"
     fi
 fi
 
