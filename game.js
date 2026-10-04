@@ -151,7 +151,7 @@ class RockPaperScissorsGame {
         const declaredMsg = ui.addChat('player', `我宣告要出：${ui.choiceText(choice)}`);
 
         try {
-            const move = await getAiMove(this.settings, this.buildContextMessage(choice), this.settings.difficulty);
+            const move = await getAiMove(this.settings, this.buildContextMessage(choice), this.settings.difficulty, choice);
 
             // 双盲承诺：aiDeclared / aiActual 在此锁定（防作弊时序不变），
             // 但宣告一个字都不给玩家看——玩家在出实际拳之前不知道它。
@@ -253,9 +253,9 @@ class RockPaperScissorsGame {
         context += `\n\n玩家刚刚宣告要出：${ui.choiceText(playerDeclared)}`;
         context += `\n\n请只输出一个 JSON 对象（不要代码块围栏、不要额外说明）：`;
         context += `\n{"taunt":"你对玩家说的话，一到两句","declared":"石头|布|剪刀|不告诉你","actual":"石头|布|剪刀"}`;
-        context += `\n\n再强调一次时序：你给出宣告和 actual 的那一刻就已经锁定了，`;
-        context += `玩家在你宣告之后才决定自己实际出什么。所以你的 declared 与 actual 可以不一致`;
-        context += `（这是核心，别老实地让它们一样），但你永远猜不到玩家实际出什么。`;
+        context += `\n\n本轮的 declared 与 actual 已经由系统决定（见下方），你只要照抄。`;
+        context += `你的创作空间只有 taunt 那句话——让它针对玩家这一轮的宣告，别泛泛地嘲讽。`;
+        context += `\n记住：你永远猜不到玩家实际出什么，这正是博弈所在。`;
         return context;
     }
 

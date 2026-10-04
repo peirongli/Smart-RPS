@@ -133,13 +133,21 @@ t(`平均 user 消息长度递增 rookie(${lens.rookie}) < regular(${lens.regula
     lens.rookie < lens.regular && lens.regular < lens.mind,
     JSON.stringify(lens));
 
-console.log('\n4) 难度杠杆 2：人格注入（system prompt）');
+console.log('\n4) 难度杠杆 2/3：人格注入 + 本轮取拳由代码决定');
 t('新手机 system 自称新手机', rookie.contexts[0].system.includes('新手机'));
 t('熟客 system 自称熟客', regular.contexts[0].system.includes('熟客'));
 t('读心者 system 自称读心者', mind.contexts[0].system.includes('读心者'));
-t('读心者 system 声明可引用玩家分析', mind.contexts[0].system.includes('引用你对玩家出拳习惯的分析'));
+t('读心者 system 声明可引用玩家分析', mind.contexts[0].system.includes('引用你对玩家出拳习惯的观察'));
 t('新手机 system 禁止心理分析', rookie.contexts[0].system.includes('不要做心理分析'));
-t('读心者 system 含误判率（保底弱点）', /misread 倾向|概率看错/.test(mind.contexts[0].system));
+t('system 已移除无法执行的概率指令',
+    !/misread 倾向|概率看错|% 概率与 actual 一致/.test(mind.contexts[0].system),
+    '诚实率/误判率应改由 rollMove() 在代码里掷骰');
+t('system 明确告知 declared/actual 已定好',
+    /已经替你决定好了|已经决定好了/.test(mind.contexts[0].system));
+t('user 消息包含本轮已定的取拳结果',
+    /本轮已定的结果，照抄进 JSON/.test(last(mind)), last(mind).slice(-200));
+t('三档的本轮结果都由代码给出（都含该标记）',
+    [rookie, regular, mind].every(s => /本轮已定的结果/.test(last(s))));
 
 console.log('\n5) 双盲时序在 60 轮中始终成立');
 for (const [name, s] of [['新手机', rookie], ['熟客', regular], ['读心者', mind]]) {

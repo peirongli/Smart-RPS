@@ -45,11 +45,15 @@ export function saveSettings(settings) {
 // 难度不是靠提示词里说"你是高手"实现的——那纯属自我感动，模型不会真的变强。
 // 真正的四个杠杆见 docs/redesign-plan.md：
 //   1. 注入信息量（由 game.js 按难度裁剪画像，这是最硬的一个）
-//   2. 欺骗倾向（宣告≠实际的概率）
-//   3. 是否亮底牌（taunt 里是否引用画像结论）
+//   2. 欺骗倾向（宣告≠实际的概率）—— **由代码实现，见 rollMove()**
+//   3. 是否亮底牌（taunt 里是否引用画像结论）—— 由 canShowReading 控制
 //   4. 刻意误判率（难度越高越要留错，否则玩家无解——这是保底设计）
 //
-// persona 只负责 2/3/4 的行为倾向与语气，信息量由 game.js 控制。
+// ⚠️ 重要教训（实测得出，勿退回）：不要在提示词里写「约 X% 概率与
+// actual 一致」这类百分比。模型无法执行概率指令——实测 DeepSeek 会把它
+// 理解成「你应该多怀疑玩家」，于是故意让 declared 与 actual 反着来。
+// 实测三档诚实率全部塌到 8%，难度差异完全消失。
+// 现在诚实率由 rollMove() 在代码里掷骰，提示词只负责让模型照抄结果。
 
 export const DIFFICULTIES = {
     rookie: {
@@ -62,8 +66,14 @@ export const DIFFICULTIES = {
         misreadRate: 0.35,
         // taunt 是否可以引用对玩家的分析
         canShowReading: false,
-        // 宣告诚实倾向
+        // 宣告与实际的一致概率。由 rollMove() 执行，模型不参与。
         honestBias: 0.75,
+        // 宣告保密的概率
+        secretRate: 0.08,
+        // 按"克制玩家宣告"出 actual 的概率（读心者最高）
+        counterRate: 0.12,
+        // 给模型看的说明：本轮 declared 是真是假
+        declaredHow: '本轮系统给你的是**真话**——你宣告什么就真出什么。说实话就好。',
         persona: `你是"新手机"——刚学会猜拳，还不太懂人类的套路。你说话热情但直白，
 容易被玩家的话术带着走。你会参考玩家的出拳习惯，但常常判断错，而且不介意承认看错。
 你的 taunt 就是随口一聊，不做心理分析。`,
@@ -76,6 +86,12 @@ export const DIFFICULTIES = {
         misreadRate: 0.15,
         canShowReading: true,
         honestBias: 0.5,
+        // 宣告保密的概率
+        secretRate: 0.15,
+        // 按"克制玩家宣告"出 actual 的概率
+        counterRate: 0.25,
+        declaredHow: '本轮系统给你的宣告有一半是真话、一半是假话，**你自己也不确定**。' +
+            '按你给的那个值说就行，但 taunt 里可以流露出你的不确定。',
         persona: `你是"熟客"——和玩家混了很久，认得出一些套路，但还不至于每次都猜中。
 你说话带点小聪明，偶尔会点一句"我大概看出来了"，但更多时候是被玩家骗过去的。
 你会适度利用玩家的出拳习惯来反制，但也会失手。`,
@@ -88,6 +104,12 @@ export const DIFFICULTIES = {
         misreadRate: 0.25,
         canShowReading: true,
         honestBias: 0.3,
+        // 宣告保密的概率
+        secretRate: 0.22,
+        // 按"克制玩家宣告"出 actual 的概率（读心者最高）
+        counterRate: 0.38,
+        declaredHow: '本轮系统给你的宣告**大概率是假的**——你的 actual 往往和它不一样。' +
+            '这就是你的打法：让玩家按错误的假设出拳。',
         persona: `你是"读心者"——你擅长从玩家的历史里找出模式，并且会**明确说出来**：
 "你宣告石头的时候七成会出布，这次我不信了。"
 
@@ -112,16 +134,18 @@ ${d.persona}
 
 ## 二、游戏规则共识
 1. 每轮流程：**玩家宣告→你回应并宣告→玩家出实际拳→双方同步揭晓**
-2. "宣告出拳"与"实际出拳"可一致（诚实策略），也可不一致（欺诈策略）
-3. 你也可以选择"不告诉你"，表示保密自己的计划
-4. 输赢判定仅以"双方实际出拳"为准（石头克剪刀、剪刀克布、布克石头）
+2. 输赢判定仅以"双方实际出拳"为准（石头克剪刀、剪刀克布、布克石头）
+3. 宣告可以和实际不一致，也可以选择"不告诉你"——但具体怎么选由系统决定，你只负责照抄
 
 ## 三、关键：信息不对称
-**你给出宣告的那一刻，你的实际出拳就已经锁定了。而玩家在你宣告之后才决定自己出什么。**
+**你的宣告和实际出拳都已经锁定了，而玩家在你宣告之后才决定自己出什么。**
 
 也就是说：
 - 你看得到玩家的宣告，看不到玩家的实际出拳
-- 玩家看不到你的宣告（你被锁住了，要等揭晓才一起亮出来）
+- 玩家看不到你的宣告（被锁住了，要等揭晓才一起亮出来）
+
+所以你的宣告是给玩家看的**心理战道具**——玩家读它时不知道该不该信。
+这个游戏的核心就在这里，而你的 taunt 是玩家在揭晓前唯一能读到的信息。
 
 所以双方都是"半盲"。你的宣告是给玩家看的**心理战道具**，不是情报——
 玩家读你的宣告时不知道该不该信。这个游戏的核心就在这里。
@@ -139,9 +163,13 @@ ${d.persona}
 字段要求：
 - **taunt**：立刻显示给玩家的话。可以回应玩家的宣告、可以放狠话、可以卖萌。
   ${d.canShowReading ? '可以（但不要求）引用你对玩家出拳习惯的分析。' : '不要做心理分析，只做闲聊和挑衅。'}
-- **declared**：你的宣告。这是你的心理战道具，可以是谎。
-  约 ${Math.round(d.honestBias * 100)}% 概率与 actual 一致。
-- **actual**：你真正的出拳。**在 declared 之后就已经确定，永不修改。**
+- **declared**：你的宣告，**由系统已经替你决定好了，照抄即可**。
+- **actual**：你的实际出拳，**同样已经决定好了，照抄即可**。
+  ${d.declaredHow}
+
+重要：你不需要自己决定出什么拳，也不需要在 declared 和 actual 之间做选择——
+系统会在本轮开始前把两个值都算好给你，你只要原样填进 JSON。
+你的唯一创作空间是 taunt 那句话。
 
 严格照抄"石头""布""剪刀"这三个词，不要写成 rock/paper/scissors，
 不要在 declared 里写"不告诉你"以外的近似表达。
@@ -150,15 +178,76 @@ ${d.persona}
 
 {"taunt": "又说要出石头？你最近三次都这么说，我可不打算再上当了。", "declared": "布", "actual": "剪刀"}
 
-## 六、策略原则
-- 不要每次都用同样的宣告模式，玩家会学会你
-- 玩家如果表现出随机性（分布变均匀），承认你跟不上了
-- 保持人格一致：你是"${d.label}"，语气和行为要匹配
-- 你的 misread 倾向：约 ${Math.round(d.misreadRate * 100)}% 的时候你会看错玩家。
-  这不是 bug，是设计——不要试图每次都猜准。`;
+## 六、taunt 的要求（这是你唯一的创作空间）
+- **必须针对玩家这一轮说的话**。玩家宣告了石头，你就要回应石头，不要泛泛嘲讽
+- 1 到 2 句，口语化，带点小聪明或小调皮
+- ${d.canShowReading ? '可以引用你对玩家出拳习惯的观察，让它显得在针对你' : '不要做心理分析，只做闲聊和挑衅'}
+- 玩家如果表现出随机性（分布变均匀），要在 taunt 里承认你跟不上了
+- 保持人格一致：你是"${d.label}"，语气要匹配
+
+**不要写 declared 和 actual 之间的关系的解释**——玩家看不到它们，
+不要提前剧透自己的策略。`;
 }
 
 export const SYSTEM_PROMPT = buildSystemPrompt(DEFAULT_DIFFICULTY);
+
+// ---------------------------------------------------------------------------
+// 宣告决策：由代码掷骰，不交给模型
+//
+// 为什么必须放在代码里（实测教训）：
+// 最初把诚实率写进提示词——「declared：约 75% 概率与 actual 一致」——
+// 模型根本无法执行概率指令。实测 DeepSeek 把它理解成「你应该多怀疑玩家」，
+// 于是故意让 declared 与 actual 反着来，三档诚实率全部塌到 8%（各档完全相同，
+// 难度差异消失）。persona 里「容易被玩家的话术带着走」更是雪上加霜。
+//
+// 现在诚实率在这里掷骰，模型只负责照抄结果并写 taunt——它擅长的部分。
+// ---------------------------------------------------------------------------
+
+const MOVES = ['rock', 'paper', 'scissors'];
+const CHOICE_TO_ZH = { rock: '石头', paper: '布', scissors: '剪刀' };
+
+// 掷出本轮的 declared 与 actual。
+// honestBias = 宣告与实际一致的概率（各档不同，这是难度杠杆 2）
+// secretRate = 宣告保密的概率
+// takeAdvice = 是否按"克制玩家宣告"的思路出 actual（高难度更可能针对玩家）
+function rollMove(difficulty, playerDeclared) {
+    const d = DIFFICULTIES[difficulty] || DIFFICULTIES[DEFAULT_DIFFICULTY];
+    const r = Math.random();
+
+    // 先决定是否保密
+    if (r < d.secretRate) {
+        return { declared: 'secret', actual: pickActual(d, playerDeclared) };
+    }
+
+    // 再决定宣告是否诚实
+    const honest = Math.random() < d.honestBias;
+    const actual = pickActual(d, playerDeclared);
+    const declared = honest ? actual : pickDifferent(actual);
+    return { declared, actual };
+}
+
+function pickActual(d, playerDeclared) {
+    // 读心者有较高概率针对玩家宣告反制；新手机基本随机
+    if (playerDeclared && playerDeclared !== 'secret' && Math.random() < d.counterRate) {
+        return BEATS[playerDeclared];
+    }
+    return MOVES[Math.floor(Math.random() * 3)];
+}
+
+function pickDifferent(avoid) {
+    const pool = MOVES.filter(m => m !== avoid);
+    return pool[Math.floor(Math.random() * pool.length)];
+}
+
+const BEATS = { rock: 'scissors', paper: 'rock', scissors: 'paper' };
+
+// 把本轮的取拳结果告诉模型，让它照抄
+function buildDecisionBrief(move) {
+    return `\n\n【本轮已定的结果，照抄进 JSON，不要改动】\n` +
+        `declared = ${move.declared === 'secret' ? '不告诉你' : CHOICE_TO_ZH[move.declared]}\n` +
+        `actual = ${CHOICE_TO_ZH[move.actual]}\n` +
+        `你的任务只是把这两个值原样填进 JSON，并写一句 taunt。`;
+}
 
 // 解析失败后的追加强问（作为新一轮 user 消息）
 const PARSE_RETRY_REMINDER = (missing) =>
@@ -418,12 +507,18 @@ export function parseAiReply(raw) {
 // 本函数不做任何"随机替 AI 出拳"的兜底。
 // 双盲承诺：declared 同样在此时锁定，但由 game.js 负责藏到揭晓才显示，
 // ai.js 不做任何显示时机的事。
+//
+// 本轮取拳由 rollMove() 在代码里决定，模型只负责照抄 + 写 taunt。
+// 如果模型给的值与定好的值不一致（它有时会自作主张），以 rollMove 为准——
+// 那是防作弊时序所依赖的值，不能被模型的输出改变。
 // ---------------------------------------------------------------------------
 
-export async function getAiMove(settings, contextMessage, difficultyId) {
+export async function getAiMove(settings, contextMessage, difficultyId, playerDeclared) {
+    const move = rollMove(difficultyId, playerDeclared);
+
     const messages = [
         { role: 'system', content: buildSystemPrompt(difficultyId) },
-        { role: 'user', content: contextMessage },
+        { role: 'user', content: contextMessage + buildDecisionBrief(move) },
     ];
 
     let lastMissing = '';
@@ -432,24 +527,30 @@ export async function getAiMove(settings, contextMessage, difficultyId) {
         if (attempt === 1) {
             // 把模型上一条原文回灌，再追加纠正指令——比空口重问更容易纠正格式
             messages.push({ role: 'assistant', content: lastRaw });
-            messages.push({ role: 'user', content: PARSE_RETRY_REMINDER(lastMissing) });
+            messages.push({
+                role: 'user',
+                content: PARSE_RETRY_REMINDER(lastMissing) +
+                    `\n\n再说一遍本轮结果：declared = ${move.declared === 'secret' ? '不告诉你' : CHOICE_TO_ZH[move.declared]}，` +
+                    `actual = ${CHOICE_TO_ZH[move.actual]}。`,
+            });
         }
         const raw = await chatCompletion(settings, messages);
         lastRaw = raw;
 
         const parsed = parseAiReply(raw);
 
-        // 缺任何一项都算解析失败：绝不用 'secret' 顶替——
-        // 那会把"模型没说清"伪装成"AI 选择保密"，凭空抹掉博弈信息。
+        // 判定格式是否合规——合规才有资格用它的 taunt。
+        // 注意：declared/actual 一律采用 rollMove 的结果，不采纳模型的。
         const missing = [];
         if (!parsed.actual) missing.push('实际出拳');
         if (!parsed.declared) missing.push('宣告');
 
         if (missing.length === 0) {
             return {
-                taunt: parsed.taunt || defaultTaunt(parsed.declared),
-                declared: parsed.declared,
-                actual: parsed.actual,
+                taunt: parsed.taunt || defaultTaunt(move.declared),
+                declared: move.declared,
+                actual: move.actual,
+                modelMatched: parsed.declared === move.declared && parsed.actual === move.actual,
             };
         }
         lastMissing = missing.join('与');
