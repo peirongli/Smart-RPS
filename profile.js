@@ -173,10 +173,6 @@ export function findPatterns(t) {
     return out;
 }
 
-export function describePatterns(t) {
-    return findPatterns(t).map(p => p.text);
-}
-
 // 随机性检测：玩家出拳分布是否已经均匀到让规律分析失效。
 // 返回 null 表示分布仍然集中；返回 {maxShare, verdict} 表示已均匀。
 //

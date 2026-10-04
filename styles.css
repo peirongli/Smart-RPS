@@ -111,30 +111,6 @@ body {
     color: #555;
 }
 
-.config-tip {
-    background: #e3f2fd;
-    border: 1px solid #2196f3;
-    border-radius: 8px;
-    padding: 12px;
-    margin-bottom: 20px;
-    font-size: 0.9rem;
-    color: #1565c0;
-}
-
-.config-tip.success {
-    background: #e8f5e8;
-    border: 1px solid #4caf50;
-    color: #2e7d32;
-}
-
-.config-tip code {
-    background: #fff;
-    padding: 2px 6px;
-    border-radius: 4px;
-    font-family: 'Courier New', monospace;
-    color: #d32f2f;
-}
-
 .input-group {
     margin-bottom: 15px;
     text-align: left;
@@ -313,8 +289,14 @@ body {
 }
 
 /* 局比分模式：比分板显示的是小局胜负，而非累计轮数 */
-.match-board.match-mode ~ .scoreboard .score-label {
-    color: #5a5db0;
+.match-board.match-mode {
+    background: #f0f7f4;
+    border-color: #bfe3d3;
+}
+
+.match-board.match-mode .match-title {
+    color: #1d7a56;
+    font-weight: 500;
 }
 
 /* 比分板 */

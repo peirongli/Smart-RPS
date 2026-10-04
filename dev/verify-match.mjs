@@ -115,6 +115,14 @@ console.log('\n— 局推进：2 胜提前结束 —');
     }
     t('复盘页已激活', await page.locator('#summary-phase').evaluate(el => el.classList.contains('active')));
 
+    // 复盘页的比分板应显示局比分（小局胜负），不是累计轮数比分
+    const pw = await page.evaluate(() =>
+        (JSON.parse(localStorage.getItem('rps-game')).gameWins || []).filter(w => w === 'win').length);
+    t('复盘页比分板显示局比分', (await page.locator('#player-score').textContent()) === String(pw),
+        `期望 ${pw}，实际 ${await page.locator('#player-score').textContent()}`);
+    t('复盘页看板处于局比分模式',
+        await page.locator('#match-board').evaluate(el => el.classList.contains('match-mode')));
+
     t('复盘标题已设置', !!(await page.locator('#summary-title').textContent()));
     t('复盘展示 3 个格子', await page.locator('#summary-content .summary-game').count() === 3);
     t('有策略演化表', await page.locator('.summary-table').count() === 1);
@@ -127,6 +135,13 @@ console.log('\n— 局推进：2 胜提前结束 —');
     await page.waitForTimeout(500);
     t('再来一场后回到第 1 局', (await page.locator('#match-title').textContent()).includes('第 1 局'));
     t('比分已归零', (await page.locator('#player-score').textContent()) === '0');
+    // 回归：看完复盘再开新场，比分板必须切回轮数比分而非停留在局比分
+    t('比分板已切回轮数模式（match-mode 已移除）',
+        !(await page.locator('#match-board').evaluate(el => el.classList.contains('match-mode'))));
+    t('看板标题不再是复盘文案',
+        !(await page.locator('#match-title').textContent()).includes('赢下这场'),
+        await page.locator('#match-title').textContent());
+    t('可以继续正常宣告', await page.locator('#declare-phase').evaluate(el => el.classList.contains('active')));
     await page.close();
 }
 

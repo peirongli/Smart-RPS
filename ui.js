@@ -208,6 +208,10 @@ export function updateScores(state) {
     document.getElementById('round-info').textContent = `第 ${state.round} 轮`;
     document.getElementById('player-score').textContent = state.playerScore;
     document.getElementById('ai-score').textContent = state.aiScore;
+    // 回到轮数比分模式——否则看完复盘点「再来一场」后，
+    // 比分板会一直停留在局比分状态（因为 match-mode 是加上去的）。
+    const board = document.getElementById('match-board');
+    if (board) board.classList.remove('match-mode');
 }
 
 // 局比分：只统计小局胜负。与「轮数比分」是两回事，复盘页要用这个。
@@ -217,6 +221,10 @@ export function updateMatchScore(state) {
     document.getElementById('player-score').textContent = pw;
     document.getElementById('ai-score').textContent = aw;
     const board = document.getElementById('match-board');
+    const title = document.getElementById('match-title');
+    if (title) {
+        title.textContent = pw >= 2 ? '你赢下这场' : aw >= 2 ? '你输掉这场' : '未分出胜负';
+    }
     if (board) board.classList.add('match-mode');
 }
 
@@ -491,20 +499,6 @@ export function renderProfile(history) {
 // 目标不是罗列统计，而是让玩家看见「我做了什么选择 → 结果如何」的因果链。
 // 局制的价值全在这里：单局看不出策略演化，三局才有对比。
 // ---------------------------------------------------------------------------
-
-function addSummaryRow(wrap, label, value, tone) {
-    const row = document.createElement('div');
-    row.className = 'summary-row' + (tone ? ' tone-' + tone : '');
-    const l = document.createElement('span');
-    l.className = 'summary-label';
-    l.textContent = label;
-    const v = document.createElement('span');
-    v.className = 'summary-value';
-    v.textContent = value;
-    row.appendChild(l);
-    row.appendChild(v);
-    wrap.appendChild(row);
-}
 
 // 单局统计：从该局的 history 切片算出
 function gameStats(records) {
