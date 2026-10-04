@@ -53,10 +53,22 @@ sleep 1.5
 $NODE dev/e2e-check.mjs
 STATUS=$?
 
+if [ $STATUS -eq 0 ]; then
+    echo
+    echo "== 5. 设计落地验证（30 轮 × 三档难度）=="
+    # 这个较慢（约 5 个会话 × 30 轮），用 --fast 可跳过
+    if [ "$1" != "--fast" ]; then
+        $NODE dev/verify-design.mjs
+        STATUS=$?
+    else
+        echo "  已跳过（--fast）"
+    fi
+fi
+
 echo
 if [ $STATUS -eq 0 ]; then
     echo "全部通过"
 else
-    echo "端到端失败"
+    echo "存在失败"
 fi
 exit $STATUS

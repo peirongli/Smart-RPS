@@ -335,7 +335,8 @@ export function renderProfile(history) {
     if (!wrap) return;
     wrap.innerHTML = '';
 
-    const recent = Array.isArray(history) ? history.slice(-20) : [];
+    // 与 AI 侧一致：统计窗口 30 轮（profile.js 的门槛需要足够样本）
+    const recent = Array.isArray(history) ? history.slice(-30) : [];
 
     if (recent.length === 0) {
         const empty = document.createElement('p');

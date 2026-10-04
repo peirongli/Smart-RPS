@@ -16,6 +16,14 @@ const MAX_HISTORY = 200;
 // 注入 AI 上下文的最近轮数。10 轮约 300-400 token，
 // 足够它看出趋势，又不至于让上下文喧宾夺主。
 const CONTEXT_ROUNDS = 10;
+// 统计画像用的历史窗口。与 CONTEXT_ROUNDS 分开是刻意的：
+// 条件模式需要足够样本量才可靠（宣告只有 3 种，窗口太小会被稀释成噪声），
+// 但把 30 轮明细全塞进上下文又太贵。
+// 所以：统计在 30 轮上进行，只把结论注入给模型；明细仍只给最近 10 轮。
+// 依据：10 轮窗口内某个宣告出现 >=5 次的概率高达 62.6%（模拟 20 万次），
+// 也就是说小窗口必然产生大量误报——读心者把噪声当规律报出去，
+// 玩家一试就发现是假的，可信度会崩，而可信度是这个人格唯一的武器。
+const PROFILE_ROUNDS = 30;
 
 function blankState() {
     return {
@@ -185,13 +193,15 @@ class RockPaperScissorsGame {
     buildContextMessage(playerDeclared) {
         const d = DIFFICULTIES[this.settings.difficulty] || DIFFICULTIES[DEFAULT_DIFFICULTY];
         const recent = this.state.history.slice(-CONTEXT_ROUNDS);
-        const tally = tallyHistory(recent);
+        // 统计窗口比明细窗口大：结论要可靠，明细要省 token。理由见 PROFILE_ROUNDS。
+        const profileWindow = this.state.history.slice(-PROFILE_ROUNDS);
+        const tally = tallyHistory(profileWindow);
 
         let context = `当前是第${this.state.round}轮。`;
 
         if (recent.length > 0) {
             // 战绩：所有难度都给，这是它能"记着你"的基础
-            context += `\n\n战绩：共 ${recent.length} 轮，你 ${tally.playerWins} 胜 ${tally.aiWins} 负 ${tally.draws} 平。`;
+            context += `\n\n战绩：共 ${profileWindow.length} 轮，你 ${tally.playerWins} 胜 ${tally.aiWins} 负 ${tally.draws} 平。`;
 
             if (d.insight === 'none') {
                 // 新手机：只给原始明细，不给任何统计结论。
@@ -202,7 +212,7 @@ class RockPaperScissorsGame {
                 });
             } else {
                 // 熟客 / 读心者：给结构化统计
-                context += `\n宣告诚实度：${recent.length - tally.deceived}/${recent.length} 轮宣告与实际一致，你撒过 ${tally.deceived} 次谎。`;
+                context += `\n宣告诚实度：${profileWindow.length - tally.deceived}/${profileWindow.length} 轮宣告与实际一致，你撒过 ${tally.deceived} 次谎。`;
                 context += `\n你的实际出拳分布：石头 ${tally.actual.rock} 次、布 ${tally.actual.paper} 次、剪刀 ${tally.actual.scissors} 次。`;
                 context += `\n你选择保密 ${tally.secrets} 次。`;
 

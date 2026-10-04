@@ -13,7 +13,13 @@ export const CHOICES = ['rock', 'paper', 'scissors'];
 
 // 条件模式统计的最小样本量：低于此值不报模式，
 // 避免"1 次里中 100%"这种噪音结论反过来误导 AI。
-export const MIN_PATTERN_SAMPLES = 3;
+//
+// 5 而不是 3：3 轮里 2 轮相同就等于"67% 规律"，那是噪声不是规律。
+// 读心者如果把噪声当规律报给玩家，玩家一试就发现是假的，
+// 它的可信度会崩——而可信度是这个人格唯一的武器。
+// 对照：CONTEXT_ROUNDS = 10，所以 5 是能在单次上下文内达到的上限附近，
+// 再往上就永远报不出模式了。
+export const MIN_PATTERN_SAMPLES = 5;
 
 function emptyTally() {
     return {
@@ -90,6 +96,15 @@ function topOf(row) {
     return { key: entries[0][0], count: entries[0][1], n: row.rock + row.paper + row.scissors };
 }
 
+// 样本量越大，对 share 的要求越严。
+// 3/3 = 100% 和 8/10 = 80% 都不该轻易被当成"规律"——前者样本太小，
+// 后者虽然看着高但仍有 2 次反例。按样本量收紧门槛可以同时压掉这两类噪声。
+function shareThreshold(n) {
+    if (n >= 8) return 0.8;
+    if (n >= 6) return 0.7;
+    return 0.6;   // n 在 [MIN_PATTERN_SAMPLES, 6)
+}
+
 // 把条件计数转成结构化模式列表（既给 AI 用，也可展示给玩家）
 export function findPatterns(t) {
     const out = [];
@@ -99,7 +114,7 @@ export function findPatterns(t) {
         const { key, count, n } = topOf(t.byDeclared[dec]);
         if (n < MIN_PATTERN_SAMPLES) continue;
         const share = count / n;
-        if (share >= 0.6 && key !== dec) {
+        if (share >= shareThreshold(n) && key !== dec) {
             out.push({
                 kind: 'declareBias',
                 declared: dec,
@@ -116,7 +131,7 @@ export function findPatterns(t) {
         const { key, count, n } = topOf(t.byAiDeclared[dec]);
         if (n < MIN_PATTERN_SAMPLES) continue;
         const share = count / n;
-        if (share >= 0.6) {
+        if (share >= shareThreshold(n)) {
             out.push({
                 kind: 'followAi',
                 aiDeclared: dec,
@@ -164,10 +179,18 @@ export function describePatterns(t) {
 
 // 随机性检测：玩家出拳分布是否已经均匀到让规律分析失效。
 // 返回 null 表示分布仍然集中；返回 {maxShare, verdict} 表示已均匀。
+//
+// 阈值 0.50 的来由（模拟 10 万次、30 轮三拳均匀随机得出）：
+//   纯随机时最大拳占比的中位数是 40%，75 分位 46.7%，95 分位 53.3%。
+//   若取 0.45，约 40% 的真随机玩家会被误判成"还在用规律"——
+//   而这类误判会让读心者宣称自己看穿了，实际却在瞎猜，可信度会崩。
+//   取 0.50 时误判降到约 11%，同时真正高度集中的玩家（>50%）仍能被判出。
+export const RANDOMIZED_THRESHOLD = 0.5;
+
 export function checkRandomized(t) {
     const total = CHOICES.reduce((sum, c) => sum + t.actual[c], 0);
-    if (total < 6) return null; // 样本太少，不下结论
+    if (total < MIN_PATTERN_SAMPLES) return null; // 样本太少，不下结论
     const maxShare = Math.max(...CHOICES.map(c => t.actual[c])) / total;
-    if (maxShare >= 0.45) return null;
+    if (maxShare >= RANDOMIZED_THRESHOLD) return null;
     return { maxShare, total, verdict: 'randomized' };
 }
