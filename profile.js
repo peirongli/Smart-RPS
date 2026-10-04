@@ -194,3 +194,41 @@ export function checkRandomized(t) {
     if (maxShare >= RANDOMIZED_THRESHOLD) return null;
     return { maxShare, total, verdict: 'randomized' };
 }
+
+// ---------------------------------------------------------------------------
+// 预判玩家本轮的实际出拳
+//
+// 这是修法 B 的核心。原先 AI 的反制是「盲目克制玩家的宣告」——
+// 问题在于它惩罚诚实者、奖励撒谎者：
+//   玩家诚实说石头真出石头 → AI 克制石头（出剪刀）→ 玩家输
+//   玩家撒谎说石头出布     → AI 克制石头（出剪刀）→ 布克剪刀 → 玩家赢
+// 于是"固定模式撒谎"成了必胜公式，读心者下胜率高到 58.6%，
+// 且难度越高越强（41%→50%→59%）——难度曲线是反的。
+//
+// 改为：AI 读「宣告 X 时玩家实际最常出 Y」的众数，克制 Y 本身。
+// 这样无论玩家诚实还是撒谎，只要它的实际出拳有规律，都会被针对。
+// 玩家掺随机 → 无众数可循 → AI 退化为随机，双方回到 33% 基准。
+// ---------------------------------------------------------------------------
+
+// 返回 { guess, confidence, n }；guess 为 null 表示读不出来
+export function predictPlayerActual(t, playerDeclared) {
+    if (!playerDeclared || playerDeclared === 'secret') {
+        // 玩家保密：退化为按实际出拳的总体分布猜测
+        const entries = CHOICES.map(c => [c, t.actual[c]]);
+        const [top, count] = entries.sort((a, b) => b[1] - a[1])[0];
+        const n = entries.reduce((sum, [, v]) => sum + v, 0);
+        if (n < MIN_PATTERN_SAMPLES) return { guess: null, confidence: 0, n };
+        return { guess: top, confidence: count / n, n };
+    }
+
+    const row = t.byDeclared[playerDeclared];
+    if (!row) return { guess: null, confidence: 0, n: 0 };
+    const entries = CHOICES.map(c => [c, row[c]]);
+    const [top, count] = entries.sort((a, b) => b[1] - a[1])[0];
+    const n = entries.reduce((sum, [, v]) => sum + v, 0);
+
+    if (n < MIN_PATTERN_SAMPLES) return { guess: null, confidence: 0, n };
+    // 众数不够显著就不敢赌，交给调用方退化为随机
+    if (count / n < 0.6) return { guess: null, confidence: count / n, n };
+    return { guess: top, confidence: count / n, n };
+}

@@ -151,7 +151,16 @@ class RockPaperScissorsGame {
         const declaredMsg = ui.addChat('player', `我宣告要出：${ui.choiceText(choice)}`);
 
         try {
-            const move = await getAiMove(this.settings, this.buildContextMessage(choice), this.settings.difficulty, choice);
+            // 把 30 轮统计窗口的画像交给 ai.js：AI 靠它预判玩家的实际出拳
+            // （修法 B）。不给的话 AI 只能盲猜，难度会塌。
+            const tally = tallyHistory(this.state.history.slice(-PROFILE_ROUNDS));
+            const move = await getAiMove(
+                this.settings,
+                this.buildContextMessage(choice),
+                this.settings.difficulty,
+                choice,
+                tally
+            );
 
             // 双盲承诺：aiDeclared / aiActual 在此锁定（防作弊时序不变），
             // 但宣告一个字都不给玩家看——玩家在出实际拳之前不知道它。

@@ -1,5 +1,12 @@
 // ai.js — 模型接入层（BYO API key，OpenAI 兼容协议）
 // 职责：设置存取、模型调用、回应解析。不碰 DOM，不碰游戏规则。
+//
+// ⚠️ 本文件同时持有 rollMove()——AI 每轮宣告与实际出拳的决策。
+// 这是刻意的：概率型行为不能交给提示词执行（实测 DeepSeek 会把
+// 「75% 概率与 actual 一致」理解成「你应该多怀疑玩家」，
+// 导致三档诚实率全部塌到 8%）。见 DIFFICULTIES 上方的注释。
+
+import { predictPlayerActual } from './profile.js';
 
 // ---------------------------------------------------------------------------
 // 厂商预设：base URL + 默认模型。均走 OpenAI 兼容的 /chat/completions。
@@ -70,8 +77,8 @@ export const DIFFICULTIES = {
         honestBias: 0.75,
         // 宣告保密的概率
         secretRate: 0.08,
-        // 按"克制玩家宣告"出 actual 的概率（读心者最高）
-        counterRate: 0.12,
+        // 针对玩家「实际出拳」下手的概率（修法 A+B 后的新语义）
+        counterRate: 0.22,
         // 给模型看的说明：本轮 declared 是真是假
         declaredHow: '本轮系统给你的是**真话**——你宣告什么就真出什么。说实话就好。',
         persona: `你是"新手机"——刚学会猜拳，还不太懂人类的套路。你说话热情但直白，
@@ -83,13 +90,13 @@ export const DIFFICULTIES = {
         label: '熟客',
         blurb: '记得你，但会被骗',
         insight: 'basic',
-        misreadRate: 0.15,
+        misreadRate: 0.22,
         canShowReading: true,
         honestBias: 0.5,
         // 宣告保密的概率
         secretRate: 0.15,
-        // 按"克制玩家宣告"出 actual 的概率
-        counterRate: 0.25,
+        // 针对玩家「实际出拳」下手的概率（修法 A+B 后的新语义）
+        counterRate: 0.32,
         declaredHow: '本轮系统给你的宣告有一半是真话、一半是假话，**你自己也不确定**。' +
             '按你给的那个值说就行，但 taunt 里可以流露出你的不确定。',
         persona: `你是"熟客"——和玩家混了很久，认得出一些套路，但还不至于每次都猜中。
@@ -101,13 +108,13 @@ export const DIFFICULTIES = {
         label: '读心者',
         blurb: '看穿你，但会栽在随机性上',
         insight: 'deep',
-        misreadRate: 0.25,
+        misreadRate: 0.30,
         canShowReading: true,
         honestBias: 0.3,
         // 宣告保密的概率
         secretRate: 0.22,
-        // 按"克制玩家宣告"出 actual 的概率（读心者最高）
-        counterRate: 0.38,
+        // 针对玩家「实际出拳」下手的概率（修法 A+B 后的新语义）
+        counterRate: 0.42,
         declaredHow: '本轮系统给你的宣告**大概率是假的**——你的 actual 往往和它不一样。' +
             '这就是你的打法：让玩家按错误的假设出拳。',
         persona: `你是"读心者"——你擅长从玩家的历史里找出模式，并且会**明确说出来**：
@@ -209,28 +216,49 @@ const CHOICE_TO_ZH = { rock: '石头', paper: '布', scissors: '剪刀' };
 // 掷出本轮的 declared 与 actual。
 // honestBias = 宣告与实际一致的概率（各档不同，这是难度杠杆 2）
 // secretRate = 宣告保密的概率
-// takeAdvice = 是否按"克制玩家宣告"的思路出 actual（高难度更可能针对玩家）
-function rollMove(difficulty, playerDeclared) {
+// counterRate = 针对玩家「实际出拳」下手的概率（修法 A+B，见下）
+function rollMove(difficulty, playerDeclared, tally) {
     const d = DIFFICULTIES[difficulty] || DIFFICULTIES[DEFAULT_DIFFICULTY];
     const r = Math.random();
 
     // 先决定是否保密
     if (r < d.secretRate) {
-        return { declared: 'secret', actual: pickActual(d, playerDeclared) };
+        return { declared: 'secret', actual: pickActual(d, playerDeclared, tally) };
     }
 
     // 再决定宣告是否诚实
     const honest = Math.random() < d.honestBias;
-    const actual = pickActual(d, playerDeclared);
+    const actual = pickActual(d, playerDeclared, tally);
     const declared = honest ? actual : pickDifferent(actual);
     return { declared, actual };
 }
 
-function pickActual(d, playerDeclared) {
-    // 读心者有较高概率针对玩家宣告反制；新手机基本随机
-    if (playerDeclared && playerDeclared !== 'secret' && Math.random() < d.counterRate) {
-        return BEATS[playerDeclared];
+// 修法 B：AI 读「宣告 X 时玩家实际最常出 Y」，克制 Y 本身，
+// 而不是盲目克制玩家的宣告。
+// 原来的盲克宣告会惩罚诚实者、奖励撒谎者——"固定模式撒谎"因此成了
+// 必胜公式（读心者 58.6%，且越难越强）。改为预判实际出拳后，
+// 诚实和撒谎都会被针对，掺随机则让 AI 无从下手。
+function pickActual(d, playerDeclared, tally) {
+    if (!tally) return MOVES[Math.floor(Math.random() * 3)];
+
+    const pred = predictPlayerActual(tally, playerDeclared);
+
+    // 读不出规律 → 随机出，双方回到 33% 基准
+    if (!pred.guess) return MOVES[Math.floor(Math.random() * 3)];
+
+    // 修法 A：基础反制率上调，让诚实玩家也面临压力（原先对诚实玩家完全无效）
+    let rate = d.counterRate;
+    // 规律越明显，反制越积极
+    rate *= 0.7 + pred.confidence * 0.6;
+    if (Math.random() < rate) return BEATS[pred.guess];
+
+    // 修法 B 的一部分：AI 也有看错的时候（misread），
+    // 这保证它不会因为读了规律就必赢，玩家仍有翻盘空间
+    if (Math.random() < d.misreadRate) {
+        const pool = MOVES.filter(m => m !== BEATS[pred.guess]);
+        return pool[Math.floor(Math.random() * pool.length)];
     }
+
     return MOVES[Math.floor(Math.random() * 3)];
 }
 
@@ -513,8 +541,8 @@ export function parseAiReply(raw) {
 // 那是防作弊时序所依赖的值，不能被模型的输出改变。
 // ---------------------------------------------------------------------------
 
-export async function getAiMove(settings, contextMessage, difficultyId, playerDeclared) {
-    const move = rollMove(difficultyId, playerDeclared);
+export async function getAiMove(settings, contextMessage, difficultyId, playerDeclared, tally) {
+    const move = rollMove(difficultyId, playerDeclared, tally);
 
     const messages = [
         { role: 'system', content: buildSystemPrompt(difficultyId) },
