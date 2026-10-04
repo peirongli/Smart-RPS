@@ -55,7 +55,14 @@ STATUS=$?
 
 if [ $STATUS -eq 0 ]; then
     echo
-    echo "== 5. 设计落地验证（30 轮 × 三档难度）=="
+    echo "== 5. 局制验证（三局两胜 + 复盘）=="
+    $NODE dev/verify-match.mjs
+    STATUS=$?
+fi
+
+if [ $STATUS -eq 0 ]; then
+    echo
+    echo "== 6. 设计落地验证（30 轮 × 三档难度）=="
     # 这个较慢（约 5 个会话 × 30 轮），用 --fast 可跳过
     if [ "$1" != "--fast" ]; then
         $NODE dev/verify-design.mjs

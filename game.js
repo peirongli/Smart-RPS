@@ -24,6 +24,12 @@ const CONTEXT_ROUNDS = 10;
 // 也就是说小窗口必然产生大量误报——读心者把噪声当规律报出去，
 // 玩家一试就发现是假的，可信度会崩，而可信度是这个人格唯一的武器。
 const PROFILE_ROUNDS = 30;
+// 三局两胜：先赢 2 个小局者胜下整场。
+// 每个小局打 ROUNDS_PER_GAME 轮。设小局的原因：画像统计需要样本量
+// （30 轮窗口），单局太短读不出规律；且小局切换是玩家调整策略的自然时机。
+const GAMES_PER_MATCH = 3;
+const MATCH_TARGET = 2;
+const ROUNDS_PER_GAME = 5;
 
 function blankState() {
     return {
@@ -37,6 +43,11 @@ function blankState() {
         aiDeclared: null,
         aiActual: null,
         history: [],
+        // 局制：gameNo 是当前是第几局，gameWins 记录每局胜负
+        gameNo: 1,
+        gameWins: [],        // 长度 = GAMES_PER_MATCH，元素为 'win' | 'lose' | 'draw'
+        matchOver: false,
+        matchWinner: null,   // 'player' | 'ai' | null
     };
 }
 
@@ -50,8 +61,9 @@ class RockPaperScissorsGame {
             onStart: () => this.startGame(),
             onDeclare: (choice) => this.handleDeclare(choice),
             onAction: (choice) => this.handleAction(choice),
-            onNextRound: () => this.startNextRound(),
+            onNextRound: () => this.onResultContinue(),
             onReset: () => this.resetGame(),
+            onRematch: () => this.startRematch(),
         });
     }
 
@@ -68,15 +80,82 @@ class RockPaperScissorsGame {
                 this.state.aiScore = saved.aiScore || 0;
                 this.state.playerName = saved.playerName || '玩家';
                 this.state.history = saved.history.slice(-MAX_HISTORY);
+                // 局制字段：旧存档没有，按第 1 局未结束处理
+                this.state.gameNo = Number(saved.gameNo) || 1;
+                this.state.gameWins = Array.isArray(saved.gameWins) ? saved.gameWins : [];
+                this.state.matchOver = !!saved.matchOver;
+                this.state.matchWinner = saved.matchWinner || null;
             }
         } catch (e) { /* 存档损坏则全新开局 */ }
     }
 
     persist() {
-        const { round, playerScore, aiScore, playerName, history } = this.state;
+        const { round, playerScore, aiScore, playerName, history,
+                gameNo, gameWins, matchOver, matchWinner } = this.state;
         try {
-            localStorage.setItem(SAVE_KEY, JSON.stringify({ round, playerScore, aiScore, playerName, history: history.slice(-MAX_HISTORY) }));
+            localStorage.setItem(SAVE_KEY, JSON.stringify({
+                round, playerScore, aiScore, playerName,
+                history: history.slice(-MAX_HISTORY),
+                gameNo, gameWins, matchOver, matchWinner,
+            }));
         } catch (e) { /* 隐私模式等场景静默降级为会话内存档 */ }
+    }
+
+    // ------------------------------------------------------------------
+    // 局制
+    //
+    // 术语澄清（曾在此处绕了一圈）：
+    //   局 = match（整场），由若干小局组成
+    //   小局 = game，一组固定轮数（ROUNDS_PER_GAME），用来积累样本量
+    //   轮 = round，一次宣告 + 出拳 + 揭晓
+    //
+    // 三局两胜指的是**小局**的胜负：每小局打满 ROUNDS_PER_GAME 轮，
+    // 按小局内胜轮数定胜负，先赢 2 个小局者胜下整场。
+    // 为什么要设小局：画像统计需要样本量（30 轮窗口），单小局太短读不出规律；
+    // 而小局之间的切换是玩家调整策略的自然时机。
+    // ------------------------------------------------------------------
+
+    // 本小局内玩家赢了几轮
+    currentGameRoundWins() {
+        const g = this.state.gameNo;
+        return this.state.history.filter(r => (r.gameNo || 1) === g && r.result === 'win').length;
+    }
+
+    // 本小局内 AI 赢了几轮
+    currentGameRoundLosses() {
+        const g = this.state.gameNo;
+        return this.state.history.filter(r => (r.gameNo || 1) === g && r.result === 'lose').length;
+    }
+
+    // 本小局是否打满
+    currentGameComplete() {
+        const g = this.state.gameNo;
+        return this.state.history.filter(r => (r.gameNo || 1) === g).length >= ROUNDS_PER_GAME;
+    }
+
+    // 本小局结果：'win' | 'lose' | 'draw'；未打满则为 null
+    currentGameResult() {
+        if (!this.currentGameComplete()) return null;
+        const pw = this.currentGameRoundWins();
+        const al = this.currentGameRoundLosses();
+        if (pw > ROUNDS_PER_GAME / 2) return 'win';
+        if (al > ROUNDS_PER_GAME / 2) return 'lose';
+        return 'draw';
+    }
+
+    // 小局是否已分出胜负（用于决定"下一轮"还是"下一局"）
+    gameFinished() {
+        return this.currentGameResult() !== null;
+    }
+
+    // 该小局是否为决胜局（先前小局都平了，本局定胜负）
+    isDecider() {
+        return this.state.gameNo >= GAMES_PER_MATCH;
+    }
+
+    updateMatchUI() {
+        ui.renderMatchBoard(this.state.gameNo, this.state.gameWins, this.state.matchOver, GAMES_PER_MATCH);
+        ui.renderGameProgress(this.state, ROUNDS_PER_GAME);
     }
 
     // ------------------------------------------------------------------
@@ -110,10 +189,12 @@ class RockPaperScissorsGame {
         ui.updateScores(this.state);
         ui.renderHistory(this.state.history);
         ui.renderProfile(this.state.history);
+        this.updateMatchUI();
 
         const d = DIFFICULTIES[this.settings.difficulty] || DIFFICULTIES[DEFAULT_DIFFICULTY];
         if (this.state.history.length > 0) {
-            ui.addChat('ai', `欢迎回来，${form.playerName}！当前比分 ${this.state.playerScore} : ${this.state.aiScore}，我们继续～`);
+            const mid = this.state.matchOver ? '（上一场已结束，点「再来一场」继续）' : `第 ${this.state.gameNo} 局进行中`;
+            ui.addChat('ai', `欢迎回来，${form.playerName}！${mid}。当前比分 ${this.state.playerScore} : ${this.state.aiScore}，我们继续～`);
         } else {
             ui.addChat('ai',
                 `嗨，${form.playerName}！我是这局的对手「${d.label}」——${d.blurb}。\n\n` +
@@ -122,9 +203,32 @@ class RockPaperScissorsGame {
                 '2. 我会回应并宣告——但我的宣告会被锁住，你看不到\n' +
                 '3. 然后你才决定自己真正出什么\n' +
                 '4. 同时揭晓，按实际出拳算输赢\n\n' +
+                `整场三局两胜：先赢 2 局者胜。所以别只顾着赢当前这一局——\n` +
+                '你得想想怎么赢下整场。\n\n' +
                 '也就是说：我说什么你听不见，你说什么我能听见。咱们都在赌对方是诚实还是在骗人。\n' +
                 '这轮你先说，打算宣告出什么呀？');
         }
+    }
+
+    // 再来一场：保留历史（玩家想看自己多局的表现），只重置局制与比分
+    startRematch() {
+        this.state.gameNo = 1;
+        this.state.gameWins = [];
+        this.state.matchOver = false;
+        this.state.matchWinner = null;
+        this.state.playerScore = 0;
+        this.state.aiScore = 0;
+        this.state.currentPhase = 'declare';
+        this.state.playerDeclared = null;
+        this.state.playerActual = null;
+        this.state.aiDeclared = null;
+        this.state.aiActual = null;
+        this.persist();
+        ui.renderAiHiddenNotice(false);
+        ui.showPhase('declare');
+        ui.updateScores(this.state);
+        this.updateMatchUI();
+        ui.addChat('ai', '再来一场！我把上一场的事忘干净了——但你刚才的打法我还记得一些。准备好了吗？');
     }
 
     resetGame() {
@@ -286,12 +390,36 @@ class RockPaperScissorsGame {
 
             this.state.history.push({
                 round: this.state.round,
+                gameNo: this.state.gameNo,
                 playerDeclared: this.state.playerDeclared,
                 playerActual: this.state.playerActual,
                 aiDeclared: this.state.aiDeclared,
                 aiActual: this.state.aiActual,
                 result,
             });
+
+            // 局制：小局打满时记一笔，先胜 2 小局者胜下整场
+            const g = this.currentGameResult();
+            if (g !== null) {
+                this.state.gameWins.push(g);
+                const playerWins = this.state.gameWins.filter(w => w === 'win').length;
+                const aiWins = this.state.gameWins.filter(w => w === 'lose').length;
+                if (playerWins >= MATCH_TARGET) {
+                    this.state.matchOver = true;
+                    this.state.matchWinner = 'player';
+                } else if (aiWins >= MATCH_TARGET) {
+                    this.state.matchOver = true;
+                    this.state.matchWinner = 'ai';
+                } else if (this.state.gameWins.length >= GAMES_PER_MATCH) {
+                    // 三小局打满仍没人赢够 2 → 整场判平。
+                    // 不加这条会无限打下去：playerWins 与 aiWins 都 < 2，
+                    // 谁都到不了 MATCH_TARGET，整场永远不结束。
+                    // 注意这不是「三局全平」——[平, 胜, 平] 也会落到这里，
+                    // 因为 1 胜 1 负谁都没到 2。语义是「三局两胜没分出胜负」。
+                    this.state.matchOver = true;
+                    this.state.matchWinner = 'draw';
+                }
+            }
             this.persist();
 
             this.state.currentPhase = 'result';
@@ -302,6 +430,9 @@ class RockPaperScissorsGame {
             ui.renderHistory(this.state.history);
             // 画像每轮刷新：玩家能看见自己的规律正在被对手读出来
             ui.renderProfile(this.state.history);
+            this.updateMatchUI();
+            // 本小局打完了 → 按钮从「下一轮」变成「看复盘」
+            ui.renderRoundAction(this.gameFinished());
 
             this.checkAndShowMeme(result);
         }, 1500);
@@ -364,6 +495,19 @@ class RockPaperScissorsGame {
 
     // ------------------------------------------------------------------
 
+    // 结果页按钮：小局打完 → 下一小局；整场打完 → 看复盘
+    onResultContinue() {
+        if (this.state.matchOver) {
+            this.showMatchSummary();
+            return;
+        }
+        if (this.gameFinished()) {
+            this.startNextGame();
+        } else {
+            this.startNextRound();
+        }
+    }
+
     startNextRound() {
         this.state.round++;
         this.state.currentPhase = 'declare';
@@ -376,6 +520,56 @@ class RockPaperScissorsGame {
         ui.showPhase('declare');
         ui.updateScores(this.state);
         ui.addChat('ai', '下一轮。先提醒一句：我会记住你之前的习惯，但你也别太机械——被我摸到规律就不好玩了。这轮你打算宣告什么？');
+    }
+
+    // 局与局之间：显式提示策略调整的可能
+    startNextGame() {
+        this.state.gameNo++;
+        this.state.currentPhase = 'declare';
+        this.state.playerDeclared = null;
+        this.state.playerActual = null;
+        this.state.aiDeclared = null;
+        this.state.aiActual = null;
+        this.persist();
+        ui.renderAiHiddenNotice(false);
+        ui.showPhase('declare');
+        ui.updateScores(this.state);
+        this.updateMatchUI();
+
+        const d = DIFFICULTIES[this.settings.difficulty] || DIFFICULTIES[DEFAULT_DIFFICULTY];
+        const left = GAMES_PER_MATCH - this.state.gameWins.length;
+        const decider = this.isDecider();
+        const myWins = this.state.gameWins.filter(w => w === 'win').length;
+        const aiWins = this.state.gameWins.filter(w => w === 'lose').length;
+
+        let msg = `第 ${this.state.gameNo} 局开始，局比分 ${myWins} : ${aiWins}。`;
+        msg += `每局打 ${ROUNDS_PER_GAME} 轮，赢下多数轮才算赢下这局。`;
+        if (decider) {
+            msg += `\n这是决胜局——拿下它就赢下整场。`;
+        } else if (left === 1) {
+            msg += `\n再打 ${left} 局就收官。`;
+        }
+        msg += `\n\n上一局的东西我已经记住了。`;
+        if (d.canShowReading) {
+            msg += `要不要换个打法？还是你觉得我读不到你？`;
+        } else {
+            msg += `我可是会记着你的习惯的。`;
+        }
+        msg += `\n这局你打算宣告什么？`;
+        ui.addChat('ai', msg);
+    }
+
+    // 整场结束：展示复盘
+    showMatchSummary() {
+        ui.renderMatchSummary(this.state, this.settings, GAMES_PER_MATCH);
+        ui.showPhase('summary');
+        const w = this.state.matchWinner;
+        ui.addChat('ai',
+            w === 'player'
+                ? '这场你赢了。不过别太得意——我记住的东西，下次开局就忘了。'
+                : w === 'draw'
+                    ? '三局下来谁都没赢够两局……看来我们想法挺像的。'
+                    : '这场你输了。要不要看看你到底输在哪一步？');
     }
 }
 

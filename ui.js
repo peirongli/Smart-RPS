@@ -17,6 +17,7 @@ export function init(callbacks) {
         btn.addEventListener('click', e => callbacks.onAction(e.currentTarget.dataset.choice));
     });
     document.getElementById('next-round').addEventListener('click', callbacks.onNextRound);
+    document.getElementById('rematch').addEventListener('click', callbacks.onRematch);
     document.getElementById('toggle-history').addEventListener('click', toggleHistory);
     document.getElementById('toggle-profile').addEventListener('click', toggleProfile);
     document.getElementById('reset-game').addEventListener('click', callbacks.onReset);
@@ -143,20 +144,100 @@ const PHASE_TEXT = {
     action: '选择你的实际出拳！',
     revealing: '同步出拳中...',
     result: '本轮结果',
+    summary: '整场结束',
 };
 
 export function showPhase(phase) {
     document.querySelectorAll('.action-phase').forEach(el => el.classList.remove('active'));
-    const ids = { declare: 'declare-phase', waiting: 'waiting-ai', action: 'action-phase', revealing: 'waiting-ai', result: 'result-phase' };
+    const ids = { declare: 'declare-phase', waiting: 'waiting-ai', action: 'action-phase', revealing: 'waiting-ai', result: 'result-phase', summary: 'summary-phase' };
     const el = document.getElementById(ids[phase]);
     if (el) el.classList.add('active');
     document.getElementById('game-phase').textContent = PHASE_TEXT[phase] || '';
+}
+
+// ---------------------------------------------------------------------------
+// 局制看板：三局两胜的进度点
+// gamesPerMatch 由 game.js 传入，避免两处各定义一份常量而漂移
+// ---------------------------------------------------------------------------
+
+export function renderMatchBoard(gameNo, gameWins, matchOver, gamesPerMatch) {
+    const titleEl = document.getElementById('match-title');
+    const dotsEl = document.getElementById('match-dots');
+    if (!titleEl || !dotsEl) return;
+    const total = gamesPerMatch || 3;
+
+    if (matchOver) {
+        titleEl.textContent = '本场结束';
+    } else {
+        const label = gameNo >= total ? '决胜局' : `第 ${gameNo} 局`;
+        titleEl.textContent = `三局两胜 · ${label}`;
+    }
+
+    dotsEl.innerHTML = '';
+    for (let i = 0; i < total; i++) {
+        const dot = document.createElement('div');
+        dot.className = 'match-dot';
+        const w = gameWins[i];
+        if (w === 'win') {
+            dot.classList.add('win');
+            dot.textContent = '胜';
+        } else if (w === 'lose') {
+            dot.classList.add('lose');
+            dot.textContent = '负';
+        } else if (w === 'draw') {
+            dot.classList.add('draw');
+            dot.textContent = '平';
+        } else if (i + 1 === gameNo && !matchOver) {
+            dot.classList.add('current');
+            dot.textContent = String(gameNo);
+        } else {
+            dot.textContent = String(i + 1);
+        }
+        dotsEl.appendChild(dot);
+    }
+}
+
+// 结果页按钮的三态：下一轮 / 下一局 / 看复盘
+export function renderRoundAction(gameFinished) {
+    const btn = document.getElementById('next-round');
+    if (!btn) return;
+    btn.textContent = gameFinished ? '看本场复盘 →' : '下一轮';
 }
 
 export function updateScores(state) {
     document.getElementById('round-info').textContent = `第 ${state.round} 轮`;
     document.getElementById('player-score').textContent = state.playerScore;
     document.getElementById('ai-score').textContent = state.aiScore;
+}
+
+// 局比分：只统计小局胜负。与「轮数比分」是两回事，复盘页要用这个。
+export function updateMatchScore(state) {
+    const pw = (state.gameWins || []).filter(w => w === 'win').length;
+    const aw = (state.gameWins || []).filter(w => w === 'lose').length;
+    document.getElementById('player-score').textContent = pw;
+    document.getElementById('ai-score').textContent = aw;
+    const board = document.getElementById('match-board');
+    if (board) board.classList.add('match-mode');
+}
+
+// 小局内进度：第几轮 / 共几轮，以及本局内双方胜轮数。
+// 让玩家在局中就知道"这局还剩 2 轮，现在 1:1 平"——否则局制没有张力。
+export function renderGameProgress(state, roundsPerGame) {
+    const el = document.getElementById('game-progress');
+    if (!el) return;
+    const g = state.gameNo || 1;
+    const recs = state.history.filter(r => (r.gameNo || 1) === g);
+    if (recs.length === 0) {
+        el.textContent = `第 ${g} 局 · 0 / ${roundsPerGame} 轮`;
+        el.className = 'game-progress';
+        return;
+    }
+    const pw = recs.filter(r => r.result === 'win').length;
+    const al = recs.filter(r => r.result === 'lose').length;
+    const left = roundsPerGame - recs.length;
+    el.textContent = `第 ${g} 局 · ${recs.length}/${roundsPerGame} 轮` +
+        `　本局 ${pw}:${al}` + (left > 0 ? `　剩 ${left} 轮` : '　已打完');
+    el.className = 'game-progress' + (left === 0 ? ' finished' : '');
 }
 
 export function setPlayerName(name) {
@@ -402,6 +483,154 @@ export function renderProfile(history) {
         ? '继续保持，别让出拳重新变得可预测。'
         : '被标红的规律是可以刻意打乱的——故意在宣告石头时改出布，规律就废了。';
     wrap.appendChild(tip);
+}
+
+// ---------------------------------------------------------------------------
+// 整场复盘
+//
+// 目标不是罗列统计，而是让玩家看见「我做了什么选择 → 结果如何」的因果链。
+// 局制的价值全在这里：单局看不出策略演化，三局才有对比。
+// ---------------------------------------------------------------------------
+
+function addSummaryRow(wrap, label, value, tone) {
+    const row = document.createElement('div');
+    row.className = 'summary-row' + (tone ? ' tone-' + tone : '');
+    const l = document.createElement('span');
+    l.className = 'summary-label';
+    l.textContent = label;
+    const v = document.createElement('span');
+    v.className = 'summary-value';
+    v.textContent = value;
+    row.appendChild(l);
+    row.appendChild(v);
+    wrap.appendChild(row);
+}
+
+// 单局统计：从该局的 history 切片算出
+function gameStats(records) {
+    const t = { total: records.length, win: 0, lose: 0, draw: 0, honest: 0, secret: 0, lied: 0 };
+    for (const r of records) {
+        if (r.result === 'win') t.win++;
+        else if (r.result === 'lose') t.lose++;
+        else if (r.result === 'draw') t.draw++;
+        if (r.playerDeclared === 'secret') t.secret++;
+        else if (r.playerDeclared === r.playerActual) t.honest++;
+        else t.lied++;
+    }
+    return t;
+}
+
+export function renderMatchSummary(state, settings, gamesPerMatch) {
+    const wrap = document.getElementById('summary-content');
+    const titleEl = document.getElementById('summary-title');
+    if (!wrap) return;
+    wrap.innerHTML = '';
+    const total = gamesPerMatch || 3;
+
+    const won = state.matchWinner === 'player';
+    const drew = state.matchWinner === 'draw';
+    titleEl.textContent = won ? '🎉 你赢下了这场' : drew ? '🤝 没分出胜负' : '😤 这场输了';
+    titleEl.className = 'summary-title' + (won ? ' win' : drew ? ' draw' : ' lose');
+
+    // 复盘页的比分板应显示局比分（2:1），而不是累计轮数比分
+    updateMatchScore(state);
+
+    // 逐局概览
+    const board = document.createElement('div');
+    board.className = 'summary-games';
+    for (let i = 0; i < total; i++) {
+        const cell = document.createElement('div');
+        cell.className = 'summary-game';
+        const gNo = document.createElement('div');
+        gNo.className = 'sg-no';
+        gNo.textContent = `第 ${i + 1} 局`;
+        const gRes = document.createElement('div');
+        gRes.className = 'sg-result';
+        const w = state.gameWins[i];
+        gRes.className += w === 'win' ? ' win' : w === 'lose' ? ' lose' : w === 'draw' ? ' draw' : ' pending';
+        gRes.textContent = w === 'win' ? '胜' : w === 'lose' ? '负' : w === 'draw' ? '平' : '—';
+        cell.appendChild(gNo);
+        cell.appendChild(gRes);
+        board.appendChild(cell);
+    }
+    wrap.appendChild(board);
+
+    // 按局拆解：策略演化才是重点
+    const byGame = new Map();
+    for (const r of state.history) {
+        const g = r.gameNo || 1;
+        if (!byGame.has(g)) byGame.set(g, []);
+        byGame.get(g).push(r);
+    }
+
+    const trendWrap = document.createElement('div');
+    trendWrap.className = 'summary-trend';
+    const trendTitle = document.createElement('div');
+    trendTitle.className = 'summary-section-title';
+    trendTitle.textContent = '你的策略演化';
+    trendWrap.appendChild(trendTitle);
+
+    const table = document.createElement('div');
+    table.className = 'summary-table';
+    const header = document.createElement('div');
+    header.className = 'summary-thead';
+    ['局', '胜负', '诚实/撒谎/保密', '胜率'].forEach((h, i) => {
+        const c = document.createElement('span');
+        c.textContent = h;
+        header.appendChild(c);
+    });
+    table.appendChild(header);
+
+    const sortedGames = [...byGame.entries()].sort((a, b) => a[0] - b[0]);
+    for (const [g, records] of sortedGames) {
+        const s = gameStats(records);
+        const rate = s.total ? Math.round(s.win / s.total * 100) : 0;
+        const row = document.createElement('div');
+        row.className = 'summary-trow';
+        const cells = [
+            String(g),
+            state.gameWins[g - 1] === 'win' ? '胜' : state.gameWins[g - 1] === 'lose' ? '负' : state.gameWins[g - 1] === 'draw' ? '平' : '—',
+            `${s.honest} / ${s.lied} / ${s.secret}`,
+            rate + '%',
+        ];
+        cells.forEach((c, i) => {
+            const cell = document.createElement('span');
+            cell.textContent = c;
+            if (i === 3) {
+                cell.className = 'st-rate';
+                if (rate >= 50) cell.classList.add('good');
+                else if (rate < 30) cell.classList.add('bad');
+            }
+            row.appendChild(cell);
+        });
+        table.appendChild(row);
+    }
+    trendWrap.appendChild(table);
+    wrap.appendChild(trendWrap);
+
+    // 结论：从数据里读出可执行的建议
+    const all = sortedGames.flatMap(([, r]) => r);
+    const agg = gameStats(all);
+    const hint = document.createElement('div');
+    hint.className = 'summary-hint';
+
+    const rate = agg.total ? Math.round(agg.win / agg.total * 100) : 0;
+    const lieRate = (agg.honest + agg.lied) ? Math.round(agg.lied / (agg.honest + agg.lied) * 100) : 0;
+
+    let msg;
+    if (agg.secret === agg.total) {
+        msg = '你整场都在保密——对手只能瞎猜你。下次试试偶尔说真话，反过来利用它的信任。';
+    } else if (lieRate >= 70) {
+        msg = '你几乎一直在撒谎。但对手读的是「宣告 → 实际」的关系，谎话被看穿后它就能精准反制——试着掺点随机。';
+    } else if (lieRate <= 30) {
+        msg = '你基本实话实说。这在高分难度下会吃亏：对手猜你的实际出拳比猜你的宣告准得多。';
+    } else if (rate >= 60) {
+        msg = '你的诚实度拿捏得不错——该骗的时候骗，该说实话的时候说实话。';
+    } else {
+        msg = '胜率还有空间。关键不是猜得准，而是让对手读不透你：宣告可以骗，但实际出拳要掺随机。';
+    }
+    hint.textContent = msg;
+    wrap.appendChild(hint);
 }
 
 // ---------------------------------------------------------------------------

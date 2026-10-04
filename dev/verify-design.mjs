@@ -28,44 +28,68 @@ const browser = await chromium.launch({ headless: true });
 // 玩家出拳策略：故意固定成「宣告石头 → 实际出布」
 const PLAYER = { declared: 'rock', actual: 'paper' };
 
-async function playSession(difficulty) {
+// 开一个新会话并填好设置。difficulty 为 null 时用 manifest 里的默认值。
+async function openSession(difficulty, contexts) {
     const page = await browser.newPage();
-    const contexts = [];   // 每次 AI 调用的完整 user 消息
-
-    page.on('request', req => {
-        if (req.url().includes('/chat/completions')) {
-            try {
-                const msgs = JSON.parse(req.postData()).messages;
-                contexts.push({
-                    user: msgs.find(m => m.role === 'user')?.content || '',
-                    system: msgs.find(m => m.role === 'system')?.content || '',
-                });
-            } catch (e) { /* ignore */ }
-        }
-    });
-
+    if (contexts) {
+        page.on('request', req => {
+            if (req.url().includes('/chat/completions')) {
+                try {
+                    const msgs = JSON.parse(req.postData()).messages;
+                    contexts.push({
+                        user: msgs.find(m => m.role === 'user')?.content || '',
+                        system: msgs.find(m => m.role === 'system')?.content || '',
+                    });
+                } catch (e) { /* ignore */ }
+            }
+        });
+    }
     await page.goto(BASE, { waitUntil: 'domcontentloaded' });
     await page.evaluate(() => localStorage.clear());
     await page.reload({ waitUntil: 'domcontentloaded' });
-
     await page.selectOption('#provider-select', 'custom');
     await page.fill('#base-url-input', 'http://localhost:8768/v1');
     await page.fill('#api-key-input', 'k');
     await page.fill('#model-input', 'honest-model');
     await page.fill('#playerName', '固定策略');
-    await page.locator(`.difficulty-opt[data-difficulty="${difficulty}"]`).click();
+    if (difficulty) await page.locator(`.difficulty-opt[data-difficulty="${difficulty}"]`).click();
     await page.click('#start-game');
     await page.waitForSelector('#game-screen.active');
+    return page;
+}
 
+// 推进到可以宣告的状态。局制下结果页按钮有三种行为：
+// 下一轮 / 下一小局 / 看复盘（后者需再点「再来一场」）。
+async function advanceToDeclare(page) {
+    for (let guard = 0; guard < 6; guard++) {
+        if (await page.locator('#summary-phase.active').count()) {
+            await page.click('#rematch');
+        } else if (await page.locator('#result-phase.active').count()) {
+            await page.click('#next-round');
+            await page.waitForTimeout(350);
+            if (await page.locator('#summary-phase.active').count()) {
+                await page.click('#rematch');
+            }
+        }
+        await page.waitForSelector('#declare-phase.active', { timeout: 12000 });
+        return;
+    }
+    throw new Error('无法推进到宣告阶段');
+}
+
+async function playSession(difficulty) {
+    const contexts = [];   // 每次 AI 调用的完整 user 消息
+    const page = await openSession(difficulty, contexts);
+
+    // 局制下 30 轮会打满 2-3 场。整场结束后自动开新场，
+    // 这样才能连续累积到 30 轮（画像统计需要样本量）。
     for (let i = 0; i < ROUNDS; i++) {
         await page.evaluate(() => {
             document.getElementById('meme-overlay')?.classList.remove('show');
             document.getElementById('meme-popup')?.classList.remove('show');
         });
-        if (i > 0) {
-            await page.click('#next-round');
-            await page.waitForSelector('#declare-phase.active', { timeout: 5000 });
-        }
+        if (i > 0) await advanceToDeclare(page);
+
         await page.locator(`#declare-phase .choice-btn[data-choice="${PLAYER.declared}"]`).click();
         await page.waitForSelector('#action-phase.active', { timeout: 15000 });
         await page.locator(`#action-phase .choice-btn[data-choice="${PLAYER.actual}"]`).click();
@@ -156,25 +180,6 @@ for (const [name, s] of [['新手机', rookie], ['熟客', regular], ['读心者
 
 console.log('\n6) 掺随机应使读心者的规律分析失效（设计中的保底弱点）');
 {
-    // 全新会话：玩家这轮改用均匀随机出拳
-    const page = await browser.newPage();
-    const contexts = [];
-    page.on('request', req => {
-        if (req.url().includes('/chat/completions')) {
-            try { contexts.push(JSON.parse(req.postData()).messages.find(m => m.role === 'user')?.content || ''); } catch (e) { }
-        }
-    });
-    await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-    await page.evaluate(() => localStorage.clear());
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.selectOption('#provider-select', 'custom');
-    await page.fill('#base-url-input', 'http://localhost:8768/v1');
-    await page.fill('#api-key-input', 'k');
-    await page.fill('#model-input', 'honest-model');
-    await page.locator('.difficulty-opt[data-difficulty="mindreader"]').click();
-    await page.click('#start-game');
-    await page.waitForSelector('#game-screen.active');
-
     // 先打 6 轮固定模式制造"有规律"的印象，再改真随机。
     //
     // 两个必须避开的陷阱（都踩过）：
@@ -184,16 +189,22 @@ console.log('\n6) 掺随机应使读心者的规律分析失效（设计中的�
     // 2. 不能用真随机取样。30 轮里最大拳占比有约 11% 概率超过 50% 阈值，
     //    会让这个断言时好时坏。这里改用确定性的轮转：宣告与实际各自独立轮转，
     //    保证 30 轮内实际出拳恰好各 10 次，远低于阈值。
+    const contexts = [];
+    const page = await openSession('mindreader');
+    // openSession 的 contexts 收集器需要复用，这里重新挂一次
+    page.on('request', req => {
+        if (req.url().includes('/chat/completions')) {
+            try { contexts.push(JSON.parse(req.postData()).messages.find(m => m.role === 'user')?.content || ''); } catch (e) { }
+        }
+    });
+
     const C = ['rock', 'paper', 'scissors'];
     for (let i = 0; i < 30; i++) {
         await page.evaluate(() => {
             document.getElementById('meme-overlay')?.classList.remove('show');
             document.getElementById('meme-popup')?.classList.remove('show');
         });
-        if (i > 0) {
-            await page.click('#next-round');
-            await page.waitForSelector('#declare-phase.active', { timeout: 5000 });
-        }
+        if (i > 0) await advanceToDeclare(page);
         // 前 6 轮固定偏差（宣告石头 → 实际出布），之后宣告与实际各自独立轮转
         const d = i < 6 ? 'rock' : C[i % 3];
         const a = i < 6 ? 'paper' : C[(i + 1) % 3];
@@ -229,33 +240,20 @@ console.log('\n7) 误报率检验（最重要的一项）');
     // （约 11% 概率最大占比超 50% 阈值），不适合当回归测试。
     const C = ['rock', 'paper', 'scissors'];
 
-    const page = await browser.newPage();
     const contexts = [];
+    const page = await openSession('mindreader');
     page.on('request', req => {
         if (req.url().includes('/chat/completions')) {
             try { contexts.push(JSON.parse(req.postData()).messages.find(m => m.role === 'user')?.content || ''); } catch (e) { }
         }
     });
-    await page.goto(BASE, { waitUntil: 'domcontentloaded' });
-    await page.evaluate(() => localStorage.clear());
-    await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.selectOption('#provider-select', 'custom');
-    await page.fill('#base-url-input', 'http://localhost:8768/v1');
-    await page.fill('#api-key-input', 'k');
-    await page.fill('#model-input', 'honest-model');
-    await page.locator('.difficulty-opt[data-difficulty="mindreader"]').click();
-    await page.click('#start-game');
-    await page.waitForSelector('#game-screen.active');
 
     for (let i = 0; i < 30; i++) {
         await page.evaluate(() => {
             document.getElementById('meme-overlay')?.classList.remove('show');
             document.getElementById('meme-popup')?.classList.remove('show');
         });
-        if (i > 0) {
-            await page.click('#next-round');
-            await page.waitForSelector('#declare-phase.active', { timeout: 5000 });
-        }
+        if (i > 0) await advanceToDeclare(page);
         await page.locator(`#declare-phase .choice-btn[data-choice="${C[i % 3]}"]`).click();
         await page.waitForSelector('#action-phase.active', { timeout: 15000 });
         await page.locator(`#action-phase .choice-btn[data-choice="${C[(i + 1) % 3]}"]`).click();

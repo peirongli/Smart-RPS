@@ -77,6 +77,12 @@
 
         <!-- 游戏主界面 -->
         <div id="game-screen" class="screen">
+            <!-- 局制看板 -->
+            <div class="match-board" id="match-board">
+                <div class="match-title" id="match-title">三局两胜 · 第 1 局</div>
+                <div class="match-dots" id="match-dots"></div>
+            </div>
+
             <!-- 比分板 -->
             <div class="scoreboard">
                 <div class="score-item player-score">
@@ -94,6 +100,7 @@
             <div class="game-status">
                 <div id="round-info" class="round-info">第 1 轮</div>
                 <div id="game-phase" class="game-phase">等待你的宣告...</div>
+                <div id="game-progress" class="game-progress">第 1 局 · 0 / 5 轮</div>
             </div>
 
             <!-- 对话区域 -->
@@ -203,6 +210,15 @@
                     </div>
 
                     <button id="next-round" class="btn btn-primary">下一轮</button>
+                </div>
+            </div>
+
+            <!-- 整场复盘 -->
+            <div id="summary-phase" class="action-phase">
+                <div class="summary-wrap">
+                    <h3 id="summary-title">整场结束</h3>
+                    <div id="summary-content" class="summary-content"></div>
+                    <button id="rematch" class="btn btn-primary">再来一场</button>
                 </div>
             </div>
 

@@ -73,6 +73,72 @@ await p2.click('#toggle-profile');
 await p2.waitForTimeout(300);
 await shot(p2, '5-profile', { fullPage: true });
 
+// ---- 局制看板（打完一小局后）----
+await p2.evaluate(() => {
+    document.getElementById('meme-overlay')?.classList.remove('show');
+    document.getElementById('meme-popup')?.classList.remove('show');
+});
+// 再打 4 轮凑满第一小局（5 轮）
+for (let i = 0; i < 4; i++) {
+    await p2.click('#next-round');
+    await p2.waitForSelector('#declare-phase.active', { timeout: 8000 });
+    await p2.locator('#declare-phase .choice-btn[data-choice="paper"]').click();
+    await p2.waitForSelector('#action-phase.active', { timeout: 15000 });
+    await p2.locator('#action-phase .choice-btn[data-choice="rock"]').click();
+    await p2.waitForSelector('#result-phase.active', { timeout: 10000 });
+}
+await p2.waitForTimeout(600);
+await shot(p2, '7-match-board');
+
+// ---- 整场复盘页（构造已结束的状态，避免真打 15 轮）----
+const p4 = await browser.newPage({ viewport: { width: 900, height: 1200 } });
+await p4.goto(BASE, { waitUntil: 'domcontentloaded' });
+await p4.evaluate(() => {
+    // 造一段有说服力的历史：第 1 局偏撒谎且输，第 2 局开始掺随机且赢
+    const mk = (gameNo, rounds, declared, actual, aiDeclared, aiActual, result) =>
+        ({ round: (gameNo - 1) * 5 + rounds, gameNo, playerDeclared: declared, playerActual: actual, aiDeclared, aiActual, result });
+    const history = [
+        mk(1, 1, 'rock', 'paper', 'paper', 'rock', 'win'),
+        mk(1, 2, 'rock', 'paper', 'paper', 'rock', 'lose'),
+        mk(1, 3, 'rock', 'paper', 'paper', 'rock', 'lose'),
+        mk(1, 4, 'rock', 'paper', 'paper', 'rock', 'lose'),
+        mk(1, 5, 'rock', 'rock', 'paper', 'rock', 'lose'),
+        mk(2, 1, 'rock', 'scissors', 'paper', 'rock', 'win'),
+        mk(2, 2, 'paper', 'rock', 'paper', 'rock', 'win'),
+        mk(2, 3, 'scissors', 'paper', 'paper', 'rock', 'lose'),
+        mk(2, 4, 'rock', 'scissors', 'paper', 'rock', 'win'),
+        mk(2, 5, 'paper', 'scissors', 'paper', 'rock', 'win'),
+        mk(3, 1, 'rock', 'rock', 'paper', 'rock', 'win'),
+        mk(3, 2, 'scissors', 'paper', 'paper', 'rock', 'win'),
+        mk(3, 3, 'paper', 'scissors', 'paper', 'rock', 'win'),
+    ];
+    localStorage.setItem('rps-game', JSON.stringify({
+        round: 10, playerScore: 6, aiScore: 4, playerName: '小李',
+        history, gameNo: 3, gameWins: ['lose', 'win', 'win'],
+        matchOver: true, matchWinner: 'player',
+    }));
+    localStorage.setItem('rps-settings', JSON.stringify({
+        provider: 'custom', apiKey: 'k', model: 'honest-model',
+        baseUrl: 'http://localhost:8768/v1', playerName: '小李', difficulty: 'mindreader',
+    }));
+});
+await p4.reload({ waitUntil: 'domcontentloaded' });
+await p4.click('#start-game');
+await p4.waitForSelector('#game-screen.active');
+// 存档已是 matchOver，但结果页按钮只在 result 阶段可见。
+// 这里直接把 UI 切到复盘页渲染（等价于 onResultContinue 的效果）。
+await p4.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem('rps-game'));
+    // 动态 import ui.js 复用其渲染函数，避免在测试里复制一份逻辑
+    import('./ui.js').then(ui => {
+        ui.renderMatchSummary(state, { difficulty: 'mindreader' }, 3);
+        ui.showPhase('summary');
+    });
+});
+await p4.waitForSelector('#summary-phase.active', { timeout: 8000 });
+await p4.waitForTimeout(400);
+await shot(p4, '8-summary', { fullPage: true });
+
 // ---- 移动端 ----
 const p3 = await browser.newPage({ viewport: { width: 390, height: 844 } });
 await p3.goto(BASE, { waitUntil: 'domcontentloaded' });
