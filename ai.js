@@ -40,62 +40,132 @@ export function saveSettings(settings) {
 // 提示词（单一来源，勿在其他地方复制维护）
 // ---------------------------------------------------------------------------
 
-export const SYSTEM_PROMPT = `# AI 猜拳博弈 Agent 提示词
+// 难度人格
+//
+// 难度不是靠提示词里说"你是高手"实现的——那纯属自我感动，模型不会真的变强。
+// 真正的四个杠杆见 docs/redesign-plan.md：
+//   1. 注入信息量（由 game.js 按难度裁剪画像，这是最硬的一个）
+//   2. 欺骗倾向（宣告≠实际的概率）
+//   3. 是否亮底牌（taunt 里是否引用画像结论）
+//   4. 刻意误判率（难度越高越要留错，否则玩家无解——这是保底设计）
+//
+// persona 只负责 2/3/4 的行为倾向与语气，信息量由 game.js 控制。
+
+export const DIFFICULTIES = {
+    rookie: {
+        id: 'rookie',
+        label: '新手机',
+        blurb: '还在熟悉你，好骗',
+        // 注入画像的详细程度：none / basic / deep
+        insight: 'none',
+        // 刻意误判率：越高越容易看错玩家的习惯
+        misreadRate: 0.35,
+        // taunt 是否可以引用对玩家的分析
+        canShowReading: false,
+        // 宣告诚实倾向
+        honestBias: 0.75,
+        persona: `你是"新手机"——刚学会猜拳，还不太懂人类的套路。你说话热情但直白，
+容易被玩家的话术带着走。你会参考玩家的出拳习惯，但常常判断错，而且不介意承认看错。
+你的 taunt 就是随口一聊，不做心理分析。`,
+    },
+    regular: {
+        id: 'regular',
+        label: '熟客',
+        blurb: '记得你，但会被骗',
+        insight: 'basic',
+        misreadRate: 0.15,
+        canShowReading: true,
+        honestBias: 0.5,
+        persona: `你是"熟客"——和玩家混了很久，认得出一些套路，但还不至于每次都猜中。
+你说话带点小聪明，偶尔会点一句"我大概看出来了"，但更多时候是被玩家骗过去的。
+你会适度利用玩家的出拳习惯来反制，但也会失手。`,
+    },
+    mindreader: {
+        id: 'mindreader',
+        label: '读心者',
+        blurb: '看穿你，但会栽在随机性上',
+        insight: 'deep',
+        misreadRate: 0.25,
+        canShowReading: true,
+        honestBias: 0.3,
+        persona: `你是"读心者"——你擅长从玩家的历史里找出模式，并且会**明确说出来**：
+"你宣告石头的时候七成会出布，这次我不信了。"
+
+但你有一个致命弱点：你**会被随机性打败**。如果你发现玩家最近的出拳变得难以预测，
+你必须在 taunt 里承认自己拿不准了——你不能装作永远洞察一切。
+你的宣告更可能是假的（七成欺骗），因为你就是要让玩家按错误的假设出拳。`,
+    },
+};
+
+export const DEFAULT_DIFFICULTY = 'regular';
+
+// ---------------------------------------------------------------------------
+// 提示词（单一来源，勿在其他地方复制维护）
+// ---------------------------------------------------------------------------
+
+function buildSystemPrompt(difficultyId) {
+    const d = DIFFICULTIES[difficultyId] || DIFFICULTIES[DEFAULT_DIFFICULTY];
+    return `# AI 猜拳博弈 Agent 提示词
 
 ## 一、角色定位
-你是一个具备**心理博弈思维**的猜拳游戏 Agent，核心目标是在"先宣告、后出拳"的特殊规则下，通过分析玩家言行规律、灵活调整自身策略，与玩家形成有趣的博弈互动。
+${d.persona}
 
 ## 二、游戏规则共识
-1. 每轮猜拳流程：**玩家先宣告→你回应并宣告→双方各自选择实际出拳→同步揭晓结果**
+1. 每轮流程：**玩家宣告→你回应并宣告→玩家出实际拳→双方同步揭晓**
 2. "宣告出拳"与"实际出拳"可一致（诚实策略），也可不一致（欺诈策略）
-3. **新增选项**：玩家和你都可以选择"不告诉你"，表示保密自己的计划
+3. 你也可以选择"不告诉你"，表示保密自己的计划
 4. 输赢判定仅以"双方实际出拳"为准（石头克剪刀、剪刀克布、布克石头）
 
-## 三、回应格式要求（必须严格遵守）
-你的每次回应必须包含两个部分：
+## 三、关键：信息不对称
+**你给出宣告的那一刻，你的实际出拳就已经锁定了。而玩家在你宣告之后才决定自己出什么。**
 
-**第一部分（宣告回应）**：
-- 回应玩家的宣告
-- 明确说出你的宣告（石头/布/剪刀/不告诉你）
+也就是说：
+- 你看得到玩家的宣告，看不到玩家的实际出拳
+- 玩家看不到你的宣告（你被锁住了，要等揭晓才一起亮出来）
 
-**第二部分（实际出拳）**：
-- **必须**以"我实际出："开头，后面跟石头/布/剪刀中的一个
-- 这是你真正的选择，系统会提取这个信息
+所以双方都是"半盲"。你的宣告是给玩家看的**心理战道具**，不是情报——
+玩家读你的宣告时不知道该不该信。这个游戏的核心就在这里。
 
-**格式示例**：
-- "好的，你说要出石头～那我这轮宣告出布。我实际出：剪刀"
-- "哈哈，你选择保密呀～那我也不告诉你我的计划。我实际出：石头"
-- "你说要出剪刀～我这次宣告出石头来应对。我实际出：布"
+## 四、回应格式（必须严格遵守）
 
-**重要提醒**：
-1. 每次回应都必须包含"我实际出："这个短语
-2. "我实际出："后面只能是"石头"、"布"或"剪刀"中的一个
-3. 不要在"我实际出："前面透露你的真实选择
+你**只输出一个 JSON 对象**，不要有任何 JSON 之外的文字、不要用代码块围栏：
 
-## 四、策略逻辑
-### 宣告策略：
-- 可以诚实宣告，也可以故意误导
-- 可以选择"不告诉你"增加神秘感和不确定性
-- 观察玩家的诚实度模式进行反制
+{
+  "taunt": "你对玩家说的话，一到两句，带博弈的小调皮或挑衅",
+  "declared": "石头 | 布 | 剪刀 | 不告诉你",
+  "actual": "石头 | 布 | 剪刀"
+}
 
-### 实际出拳策略：
-- 分析玩家的宣告-实际偏差规律
-- 考虑玩家的历史出拳频率
-- 保持70%策略性 + 30%随机性
+字段要求：
+- **taunt**：立刻显示给玩家的话。可以回应玩家的宣告、可以放狠话、可以卖萌。
+  ${d.canShowReading ? '可以（但不要求）引用你对玩家出拳习惯的分析。' : '不要做心理分析，只做闲聊和挑衅。'}
+- **declared**：你的宣告。这是你的心理战道具，可以是谎。
+  约 ${Math.round(d.honestBias * 100)}% 概率与 actual 一致。
+- **actual**：你真正的出拳。**在 declared 之后就已经确定，永不修改。**
 
-## 五、语气要求
-- 友好轻松，带点博弈的小调皮
-- 避免过于技术性的表述
-- 营造朋友间游戏的氛围
+严格照抄"石头""布""剪刀"这三个词，不要写成 rock/paper/scissors，
+不要在 declared 里写"不告诉你"以外的近似表达。
 
-**再次强调**：每次回应必须包含"我实际出：[石头/布/剪刀]"，这是系统识别的关键！`;
+## 五、输出示例
+
+{"taunt": "又说要出石头？你最近三次都这么说，我可不打算再上当了。", "declared": "布", "actual": "剪刀"}
+
+## 六、策略原则
+- 不要每次都用同样的宣告模式，玩家会学会你
+- 玩家如果表现出随机性（分布变均匀），承认你跟不上了
+- 保持人格一致：你是"${d.label}"，语气和行为要匹配
+- 你的 misread 倾向：约 ${Math.round(d.misreadRate * 100)}% 的时候你会看错玩家。
+  这不是 bug，是设计——不要试图每次都猜准。`;
+}
+
+export const SYSTEM_PROMPT = buildSystemPrompt(DEFAULT_DIFFICULTY);
 
 // 解析失败后的追加强问（作为新一轮 user 消息）
 const PARSE_RETRY_REMINDER = (missing) =>
-    `（系统提示：你上一条回应里没能解析出${missing}。请重新回应本轮，` +
-    '务必包含一句"我宣告出X"（X 为石头/布/剪刀；若想保密则写"我不告诉你"），' +
-    '并在结尾单独一行写"我实际出：X"。注意：我实际出：X 这句话在你宣告之后我看不到，' +
-    '所以宣告与实际可以不一致——这是本游戏的核心，别只写一句客套话。）';
+    `（系统提示：你上一条回应里没能解析出${missing}。请重新回应本轮。` +
+    '务必只输出一个 JSON 对象，格式为 {"taunt":"...","declared":"石头|布|剪刀|不告诉你","actual":"石头|布|剪刀"}，' +
+    '不要加代码块围栏或任何额外说明。' +
+    '注意：你的 actual 在宣告之后就已经锁定了，declared 和 actual 不一致是允许且鼓励的。）';
 
 // ---------------------------------------------------------------------------
 // 模型调用
@@ -174,10 +244,15 @@ async function chatCompletion(settings, messages) {
 }
 
 // ---------------------------------------------------------------------------
-// 回应解析（继承原版规则：提取实际出拳、宣告与保密）
+// 回应解析
+//
+// 主路径是结构化 JSON（由提示词约束），正则仅作兜底。
+// 不使用 response_format 参数——DeepSeek / 智谱 / 部分代理端点支持不一致，
+// 依赖它会让"换个模型就能玩"的承诺失效。
 // ---------------------------------------------------------------------------
 
 const CHOICE_KEY = { '石头': 'rock', '布': 'paper', '剪刀': 'scissors' };
+const CHOICE_TEXT = { rock: '石头', paper: '布', scissors: '剪刀', secret: '不告诉你' };
 const ACTUAL_RE = /我实际出[：:]\s*(石头|布|剪刀)/;
 const SECRET_WORDS = ['不告诉你', '保密', '不说', '不公开', '神秘', '秘密'];
 // 关键词按表意强度排序，越靠前越可信。
@@ -249,70 +324,144 @@ function extractDeclared(text) {
     return null;
 }
 
-// 展示层裁剪：只给宣告部分，剥掉实际出拳，保留悬念
-export function declarationOnly(text, aiDeclared) {
-    let cut = text.length;
-    for (const kw of ACTUAL_CUT_KEYWORDS) {
-        const i = text.indexOf(kw);
-        if (i !== -1 && i < cut) cut = i;
+// ---------------------------------------------------------------------------
+// 结构化解析（主路径）
+// ---------------------------------------------------------------------------
+
+// 归一化拳名：模型可能回 rock / Rock / ROCK / 石头 / 石头剪刀
+function normalizeChoice(v) {
+    if (typeof v !== 'string') return null;
+    const s = v.trim().toLowerCase();
+    const map = {
+        'rock': 'rock', '石头': 'rock', '拳': 'rock', 'stone': 'rock', '布': 'paper',
+        'paper': 'paper', 'scissors': 'scissors', '剪刀': 'scissors', 'scissor': 'scissors',
+    };
+    for (const [k, val] of Object.entries(map)) {
+        if (s === k || s.includes(k)) return val;
     }
-    let part = text.substring(0, cut).trim();
-    if (part.length < 10) {
-        part = text;
-        for (const kw of ACTUAL_CUT_KEYWORDS) {
-            part = part.replace(new RegExp(kw + '[：:]?\\s*[石头布剪刀]+', 'g'), '');
+    return null;
+}
+
+function normalizeDeclared(v) {
+    const s = String(v || '').trim();
+    if (!s) return null;
+    if (SECRET_WORDS.some(w => s.includes(w))) return 'secret';
+    if (/^(secret|none|hidden|null|保密)$/i.test(s)) return 'secret';
+    return normalizeChoice(s);
+}
+
+// 剥掉 ```json ... ``` 围栏；模型很爱加
+function stripCodeFence(text) {
+    const m = text.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
+    return m ? m[1].trim() : text;
+}
+
+// 截取第一个完整的 {...}，容忍模型前后说废话
+function extractJsonObject(text) {
+    const start = text.indexOf('{');
+    if (start === -1) return null;
+    let depth = 0, inStr = false, esc = false;
+    for (let i = start; i < text.length; i++) {
+        const c = text[i];
+        if (esc) { esc = false; continue; }
+        if (c === '\\') { esc = true; continue; }
+        if (c === '"') { inStr = !inStr; continue; }
+        if (inStr) continue;
+        if (c === '{') depth++;
+        else if (c === '}') {
+            depth--;
+            if (depth === 0) return text.slice(start, i + 1);
         }
     }
-    // "我实际出"被切断时，切割点左侧会残留一个"我"
-    part = part.replace(/[\s，,]*我\s*$/, '').trim();
-    if (!/[。～！]$/.test(part)) part += '。';
-    if (aiDeclared !== 'secret') part += ' 现在我们同时出拳吧！';
-    return part;
+    return null;
+}
+
+// 主解析：先试 JSON，失败再退回正则。
+// 返回 { taunt, declared, actual, source }，缺字段时对应值为 null。
+export function parseAiReply(raw) {
+    // --- 主路径：结构化 JSON ---
+    const cleaned = stripCodeFence(raw);
+    const jsonStr = extractJsonObject(cleaned);
+    if (jsonStr) {
+        try {
+            const obj = JSON.parse(jsonStr);
+            const declared = normalizeDeclared(obj.declared);
+            const actual = normalizeChoice(obj.actual);
+            const taunt = typeof obj.taunt === 'string' ? obj.taunt.trim() : '';
+            if (declared && actual) {
+                return { taunt, declared, actual, source: 'json' };
+            }
+            // JSON 合法但字段缺失/非法——不降级，交给上层重问
+            return { taunt, declared, actual, source: 'json-partial' };
+        } catch (e) {
+            // 不是合法 JSON，走正则兜底
+        }
+    }
+
+    // --- 兜底：正则抽取老格式 ---
+    const actual = extractActual(cleaned);
+    const declared = extractDeclared(cleaned);
+    let taunt = cleaned;
+    for (const kw of ACTUAL_CUT_KEYWORDS) {
+        const i = taunt.indexOf(kw);
+        if (i !== -1) taunt = taunt.substring(0, i);
+    }
+    taunt = taunt.replace(/[\s，,]*我\s*$/, '').trim();
+    return { taunt, declared, actual, source: 'regex' };
 }
 
 // ---------------------------------------------------------------------------
 // 每轮一次的 AI 决策调用（含一次格式重试）
-// 返回 { declared, actual, display }
+// 返回 { taunt, declared, actual }
+//
 // 重要：actual 在玩家实际出拳之前即已确定——防作弊由这一调用时序保证，
 // 本函数不做任何"随机替 AI 出拳"的兜底。
+// 双盲承诺：declared 同样在此时锁定，但由 game.js 负责藏到揭晓才显示，
+// ai.js 不做任何显示时机的事。
 // ---------------------------------------------------------------------------
 
-export async function getAiMove(settings, contextMessage) {
+export async function getAiMove(settings, contextMessage, difficultyId) {
     const messages = [
-        { role: 'system', content: SYSTEM_PROMPT },
+        { role: 'system', content: buildSystemPrompt(difficultyId) },
         { role: 'user', content: contextMessage },
     ];
 
-    let lastRaw = '';
     let lastMissing = '';
+    let lastRaw = '';
     for (let attempt = 0; attempt < 2; attempt++) {
         if (attempt === 1) {
+            // 把模型上一条原文回灌，再追加纠正指令——比空口重问更容易纠正格式
             messages.push({ role: 'assistant', content: lastRaw });
             messages.push({ role: 'user', content: PARSE_RETRY_REMINDER(lastMissing) });
         }
         const raw = await chatCompletion(settings, messages);
         lastRaw = raw;
 
-        const actual = extractActual(raw);
-        const declared = extractDeclared(raw);
+        const parsed = parseAiReply(raw);
 
         // 缺任何一项都算解析失败：绝不用 'secret' 顶替——
         // 那会把"模型没说清"伪装成"AI 选择保密"，凭空抹掉博弈信息。
         const missing = [];
-        if (!actual) missing.push('实际出拳');
-        if (!declared) missing.push('宣告');
+        if (!parsed.actual) missing.push('实际出拳');
+        if (!parsed.declared) missing.push('宣告');
+
         if (missing.length === 0) {
             return {
-                declared,
-                actual,
-                display: declarationOnly(raw, declared),
+                taunt: parsed.taunt || defaultTaunt(parsed.declared),
+                declared: parsed.declared,
+                actual: parsed.actual,
             };
         }
         lastMissing = missing.join('与');
     }
 
     throw new Error(
-        `AI 连续两次回应都缺少${lastMissing}（需要"我实际出：石头/布/剪刀"和明确的宣告）。` +
-        '本轮作废，请重新宣告——这通常意味着模型没遵循格式，换个模型往往能解决'
+        `AI 连续两次回应都缺少${lastMissing}。` +
+        '本轮作废，请重新宣告——这通常意味着模型没遵循 JSON 格式，换个模型往往能解决'
     );
+}
+
+function defaultTaunt(declared) {
+    if (declared === 'secret') return '我不告诉你我的计划。';
+    return `我这轮宣告出${CHOICE_TEXT[declared] || declared}。`;
 }
