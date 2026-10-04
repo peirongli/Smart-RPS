@@ -2,3 +2,7 @@
 node_modules/
 .vscode/
 .workbuddy/
+
+# 真实模型验证的凭据（绝不入库）
+.env
+.env.local
