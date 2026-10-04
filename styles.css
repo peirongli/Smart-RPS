@@ -359,11 +359,27 @@ body {
     box-shadow: 0 2px 8px rgba(0,0,0,0.1);
     font-size: 0.95rem;
     line-height: 1.4;
+    /* AI 返回的文本由 textContent 插入，靠这里保留换行 */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
 }
 
 .player-message .message-text {
     background: #667eea;
     color: white;
+}
+
+/* 作废的轮次：AI 调用失败时标记，避免玩家把两次宣告当成两轮 */
+.message-void {
+    opacity: 0.45;
+}
+.message-void .message-text {
+    font-style: italic;
+    border: 1px dashed rgba(0,0,0,0.25);
+    box-shadow: none;
+}
+.player-message.message-void .message-text {
+    background: #8a8fce;
 }
 
 /* 动作阶段 */

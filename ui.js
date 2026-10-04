@@ -113,17 +113,29 @@ export function setPlayerName(name) {
 // 聊天流
 // ---------------------------------------------------------------------------
 
+// AI/玩家文本一律走 textContent——AI 返回内容是不可信输入，绝不能进 innerHTML。
+// 换行由 .message-text 的 pre-wrap 处理。
+// 返回该消息元素，便于失败时撤回（见 game.js 的作废轮处理）。
 export function addChat(sender, text) {
     const chatMessages = document.getElementById('chat-messages');
     const chatArea = document.querySelector('.chat-area');
     const el = document.createElement('div');
     el.className = 'message ' + sender + '-message';
-    const avatar = sender === 'player' ? '🧑' : '🤖';
-    el.innerHTML = `
-        <div class="message-avatar">${avatar}</div>
-        <div class="message-content">
-            <div class="message-text">${text.replace(/\n/g, '<br>')}</div>
-        </div>`;
+
+    const avatar = document.createElement('div');
+    avatar.className = 'message-avatar';
+    avatar.textContent = sender === 'player' ? '🧑' : '🤖';
+
+    const content = document.createElement('div');
+    content.className = 'message-content';
+
+    const body = document.createElement('div');
+    body.className = 'message-text';
+    body.textContent = text;
+
+    content.appendChild(body);
+    el.appendChild(avatar);
+    el.appendChild(content);
     chatMessages.appendChild(el);
 
     el.style.opacity = '0';
@@ -134,6 +146,16 @@ export function addChat(sender, text) {
         el.style.opacity = '1';
         el.style.transform = 'translateY(0)';
     }, 10);
+
+    return el;
+}
+
+// 作废轮次：把该条消息标记为无效而非直接删——让玩家看得出发生过什么
+export function voidChat(el) {
+    if (!el || !el.parentNode) return;
+    el.classList.add('message-void');
+    const body = el.querySelector('.message-text');
+    if (body) body.textContent = body.textContent + '\n（本轮作废）';
 }
 
 export function clearChat() {

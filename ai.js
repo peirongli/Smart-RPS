@@ -91,7 +91,11 @@ export const SYSTEM_PROMPT = `# AI 猜拳博弈 Agent 提示词
 **再次强调**：每次回应必须包含"我实际出：[石头/布/剪刀]"，这是系统识别的关键！`;
 
 // 解析失败后的追加强问（作为新一轮 user 消息）
-const PARSE_RETRY_REMINDER = '（系统提示：你上一条回应里没有解析到"我实际出：石头/布/剪刀"。请重新回应本轮，务必在回应结尾单独写一行"我实际出：X"，X 只能是石头、布或剪刀。）';
+const PARSE_RETRY_REMINDER = (missing) =>
+    `（系统提示：你上一条回应里没能解析出${missing}。请重新回应本轮，` +
+    '务必包含一句"我宣告出X"（X 为石头/布/剪刀；若想保密则写"我不告诉你"），' +
+    '并在结尾单独一行写"我实际出：X"。注意：我实际出：X 这句话在你宣告之后我看不到，' +
+    '所以宣告与实际可以不一致——这是本游戏的核心，别只写一句客套话。）';
 
 // ---------------------------------------------------------------------------
 // 模型调用
@@ -175,9 +179,21 @@ async function chatCompletion(settings, messages) {
 
 const CHOICE_KEY = { '石头': 'rock', '布': 'paper', '剪刀': 'scissors' };
 const ACTUAL_RE = /我实际出[：:]\s*(石头|布|剪刀)/;
-const SECRET_WORDS = ['不告诉你', '保密', '不说', '神秘'];
-const DECLARE_KEYWORDS = ['宣告出', '倾向出', '打算出', '可能出', '想出', '选择出'];
+const SECRET_WORDS = ['不告诉你', '保密', '不说', '不公开', '神秘', '秘密'];
+// 关键词按表意强度排序，越靠前越可信。
+// 刻意不含单字"出"和"想"：它们在"我实际出：X"这类句子里会误命中，
+// 导致宣告被解析成实际出拳（实测踩过）。
+const DECLARE_KEYWORDS = [
+    '宣告出', '宣告是', '宣告为', '宣告', '宣布',
+    '倾向出', '倾向',
+    '打算出', '打算', '准备出', '准备',
+    '可能出', '可能', '大概', '估计',
+    '选择出', '选择', '我要出', '要出', '这轮出',
+    '我这轮押', '押',
+];
 const ACTUAL_CUT_KEYWORDS = ['实际出', '真正出', '最终出', '我出'];
+// 解析宣告时遇到这些前缀直接跳过——它们属于"实际出拳"那一句，不属于宣告
+const ACTUAL_PREFIXES = ['实际出', '真正出', '最终出', '我出', '实际', '真正', '最终'];
 
 function extractActual(text) {
     const m = text.match(ACTUAL_RE);
@@ -190,15 +206,46 @@ function extractActual(text) {
     return null;
 }
 
+// 关键词与拳名之间的最大允许间隔。
+// 6 字刚好容纳"我实际出："（5 字）而不越界到下一句——
+// 窗口开太大（如 12）会让"我这轮押石头。我实际出：剪刀"里的"押"捞到后半句的拳。
+const DECLARE_WINDOW = 6;
+// 并列/含糊表述：出现这些词说明模型在说"都行/随便"，不是在宣告。
+// 刻意不含"不确定"——那是思考型措辞，后面往往跟着明确选择。
+const HEDGE_WORDS = ['都行', '随便', '或者', '或是', '都可以'];
+
 function extractDeclared(text) {
+    // 1) 保密优先：只认明确的保密措辞
     if (SECRET_WORDS.some(w => text.includes(w))) return 'secret';
+
+    // 2) 关键词就近匹配——从每个关键词位置往后找最近的拳名。
+    //    顺序即优先级：越靠前的关键词表意越强。
     for (const kw of DECLARE_KEYWORDS) {
-        for (const choice of ['石头', '剪刀', '布']) {
-            const patterns = [kw + choice, kw + '：' + choice, kw + ': ' + choice, kw + ' ' + choice];
-            if (patterns.some(p => text.includes(p))) return CHOICE_KEY[choice];
+        let from = 0;
+        for (;;) {
+            const i = text.indexOf(kw, from);
+            if (i === -1) break;
+            // 落进"实际出拳"那句就跳过，别把实际拳当宣告
+            if (!ACTUAL_PREFIXES.some(p => text.startsWith(p, i))) {
+                const tail = text.slice(i, i + kw.length + DECLARE_WINDOW);
+                // 含糊表述不算宣告
+                if (!HEDGE_WORDS.some(h => tail.includes(h))) {
+                    for (const choice of ['石头', '剪刀', '布']) {
+                        if (tail.includes(choice)) return CHOICE_KEY[choice];
+                    }
+                }
+            }
+            from = i + kw.length;
         }
     }
-    // 宣告语不明晰时不猜——按"未宣告"处理
+
+    // 3) 兜底前先看含糊词：整段都在说"都行/随便"时不要硬猜
+    if (!HEDGE_WORDS.some(h => text.includes(h))) {
+        const hits = ['石头', '剪刀', '布'].filter(c => text.includes(c));
+        if (hits.length === 1) return CHOICE_KEY[hits[0]];
+    }
+
+    // 宣告语不明晰时不猜——按"未宣告"处理，交给上层重问
     return null;
 }
 
@@ -237,25 +284,35 @@ export async function getAiMove(settings, contextMessage) {
     ];
 
     let lastRaw = '';
+    let lastMissing = '';
     for (let attempt = 0; attempt < 2; attempt++) {
         if (attempt === 1) {
             messages.push({ role: 'assistant', content: lastRaw });
-            messages.push({ role: 'user', content: PARSE_RETRY_REMINDER });
+            messages.push({ role: 'user', content: PARSE_RETRY_REMINDER(lastMissing) });
         }
         const raw = await chatCompletion(settings, messages);
         lastRaw = raw;
 
         const actual = extractActual(raw);
-        if (actual) {
-            const declared = extractDeclared(raw) || 'secret';
+        const declared = extractDeclared(raw);
+
+        // 缺任何一项都算解析失败：绝不用 'secret' 顶替——
+        // 那会把"模型没说清"伪装成"AI 选择保密"，凭空抹掉博弈信息。
+        const missing = [];
+        if (!actual) missing.push('实际出拳');
+        if (!declared) missing.push('宣告');
+        if (missing.length === 0) {
             return {
                 declared,
                 actual,
                 display: declarationOnly(raw, declared),
             };
         }
-        // 解析失败 → 再追问一次
+        lastMissing = missing.join('与');
     }
 
-    throw new Error('AI 连续两次回应都没有包含可识别的"我实际出：石头/布/剪刀"。本轮作废，请重新宣告（这通常意味着模型没有遵循格式，换个模型往往能解决）');
+    throw new Error(
+        `AI 连续两次回应都缺少${lastMissing}（需要"我实际出：石头/布/剪刀"和明确的宣告）。` +
+        '本轮作废，请重新宣告——这通常意味着模型没遵循格式，换个模型往往能解决'
+    );
 }
