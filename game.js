@@ -1,9 +1,14 @@
 // game.js — 状态机、规则与持久化
+//
 // 一轮的时序（防作弊关键设计，勿改动顺序）：
-//   玩家宣告 → AI 回应并锁定实际出拳（一次模型调用）→ 玩家实际出拳 → 同步揭晓
+//   玩家宣告 → AI 回应并锁定宣告与实际出拳（一次模型调用）→ 玩家实际出拳 → 同步揭晓
 // AI 的实际出拳在玩家出拳前就已确定，结构上不存在 AI 偷看的可能。
+//
+// 双盲承诺：AI 的宣告同样在那一次调用里锁定，但藏到揭晓才显示。
+// 改显示时机是安全的，改调用时序不是——见 docs/redesign-plan.md。
 
-import { getAiMove, loadSettings, saveSettings, PROVIDERS } from './ai.js';
+import { getAiMove, loadSettings, saveSettings, DIFFICULTIES, DEFAULT_DIFFICULTY } from './ai.js';
+import { tallyHistory, findPatterns, checkRandomized } from './profile.js';
 import * as ui from './ui.js';
 
 const SAVE_KEY = 'rps-game';
@@ -11,11 +16,6 @@ const MAX_HISTORY = 200;
 // 注入 AI 上下文的最近轮数。10 轮约 300-400 token，
 // 足够它看出趋势，又不至于让上下文喧宾夺主。
 const CONTEXT_ROUNDS = 10;
-// 条件模式统计的最小样本量：低于此值不报模式，避免"1 次里中 100%"的噪音结论
-const MIN_PATTERN_SAMPLES = 3;
-// 统计里要用到拳名，但显示文案以 ui.choiceText 为准（ui.js 是唯一来源）。
-// 这里复制一份是因为统计模块不该反向依赖 UI 层。
-const CHOICE_TEXT = { rock: '石头', paper: '布', scissors: '剪刀', secret: '不告诉你' };
 
 function blankState() {
     return {
@@ -33,116 +33,6 @@ function blankState() {
 }
 
 // ---------------------------------------------------------------------------
-// 战绩统计
-// 从 history 里算出可直接喂给模型的结构化事实，避免靠自然语言描述统计。
-// P2 的博弈画像也建立在这套统计之上。
-// ---------------------------------------------------------------------------
-
-function emptyTally() {
-    return {
-        total: 0,
-        playerWins: 0,
-        aiWins: 0,
-        draws: 0,
-        // 玩家实际出拳分布
-        actual: { rock: 0, paper: 0, scissors: 0 },
-        // 玩家宣告分布
-        declared: { rock: 0, paper: 0, scissors: 0, secret: 0 },
-        // 宣告 -> 实际 的条件计数：真正的"偏差规律"藏在这里
-        byDeclared: {
-            rock: { rock: 0, paper: 0, scissors: 0 },
-            paper: { rock: 0, paper: 0, scissors: 0 },
-            scissors: { rock: 0, paper: 0, scissors: 0 },
-        },
-        // AI 宣告 -> 玩家实际 的条件计数：玩家会不会跟着 AI 的宣告走？
-        // 这个最有博弈价值——如果玩家总是被 AI 的宣告带跑，AI 就能反过来喂假信息
-        byAiDeclared: {
-            rock: { rock: 0, paper: 0, scissors: 0 },
-            paper: { rock: 0, paper: 0, scissors: 0 },
-            scissors: { rock: 0, paper: 0, scissors: 0 },
-        },
-        // AI 宣告 -> AI 实际：AI 自己的说谎习惯（AI 也要可被玩家读）
-        byAiLie: {
-            rock: { rock: 0, paper: 0, scissors: 0 },
-            paper: { rock: 0, paper: 0, scissors: 0 },
-            scissors: { rock: 0, paper: 0, scissors: 0 },
-        },
-    };
-}
-
-function bump(bucket, key) {
-    if (bucket[key] !== undefined) bucket[key]++;
-}
-
-function tallyHistory(history) {
-    const t = emptyTally();
-    for (const r of history) {
-        if (!r || typeof r !== 'object') continue;
-        t.total++;
-        if (r.result === 'win') t.playerWins++;
-        else if (r.result === 'lose') t.aiWins++;
-        else if (r.result === 'draw') t.draws++;
-
-        bump(t.actual, r.playerActual);
-        bump(t.declared, r.playerDeclared);
-
-        // 玩家说谎 = 宣告了具体拳但实际不是它
-        if (r.playerDeclared && r.playerDeclared !== 'secret') {
-            bump(t.byDeclared[r.playerDeclared], r.playerActual);
-        }
-        if (r.aiDeclared && r.aiDeclared !== 'secret') {
-            bump(t.byAiDeclared[r.aiDeclared], r.playerActual);
-            bump(t.byAiLie[r.aiDeclared], r.aiActual);
-        }
-    }
-    t.deceived = t.declared.rock + t.declared.paper + t.declared.scissors
-        - (t.byDeclared.rock.rock + t.byDeclared.paper.paper + t.byDeclared.scissors.scissors);
-    t.secrets = t.declared.secret;
-    return t;
-}
-
-// 把条件计数转成一句话结论，只报样本量达标的模式
-function describePatterns(t) {
-    const out = [];
-
-    // 1) 玩家的"宣告偏差"：宣告 X 时实际最常出 Y
-    for (const dec of ['rock', 'paper', 'scissors']) {
-        const row = t.byDeclared[dec];
-        const n = row.rock + row.paper + row.scissors;
-        if (n < MIN_PATTERN_SAMPLES) continue;
-        const [top, count] = Object.entries(row).sort((a, b) => b[1] - a[1])[0];
-        if (count / n >= 0.6 && top !== dec) {
-            out.push(`你宣告${CHOICE_TEXT[dec]}时有 ${Math.round(count / n * 100)}% 实际出${CHOICE_TEXT[top]}`);
-        }
-    }
-
-    // 2) 玩家是否跟着 AI 的宣告走：AI 宣告 X 时玩家最常出 Y
-    for (const dec of ['rock', 'paper', 'scissors']) {
-        const row = t.byAiDeclared[dec];
-        const n = row.rock + row.paper + row.scissors;
-        if (n < MIN_PATTERN_SAMPLES) continue;
-        const [top, count] = Object.entries(row).sort((a, b) => b[1] - a[1])[0];
-        if (count / n >= 0.6) {
-            out.push(`我宣告${CHOICE_TEXT[dec]}时你 ${Math.round(count / n * 100)}% 会出${CHOICE_TEXT[top]}——这条我可以用`);
-        }
-    }
-
-    // 3) AI 自己的说谎习惯：玩家也能反向读它
-    let aiDeceived = 0, aiHonest = 0;
-    for (const dec of ['rock', 'paper', 'scissors']) {
-        aiHonest += t.byAiLie[dec][dec];
-        for (const act of ['rock', 'paper', 'scissors']) {
-            if (act !== dec) aiDeceived += t.byAiLie[dec][act];
-        }
-    }
-    const aiTotal = aiHonest + aiDeceived;
-    if (aiTotal >= MIN_PATTERN_SAMPLES) {
-        if (aiDeceived / aiTotal >= 0.6) out.push('我自己的宣告也不可信，别只盯着我说了什么');
-        else if (aiHonest / aiTotal >= 0.6) out.push('我最近基本说实话，代价是你现在知道这一点了');
-    }
-
-    return out;
-}
 
 class RockPaperScissorsGame {
     constructor() {
@@ -211,23 +101,35 @@ class RockPaperScissorsGame {
         ui.showPhase('declare');
         ui.updateScores(this.state);
         ui.renderHistory(this.state.history);
+        ui.renderProfile(this.state.history);
 
+        const d = DIFFICULTIES[this.settings.difficulty] || DIFFICULTIES[DEFAULT_DIFFICULTY];
         if (this.state.history.length > 0) {
             ui.addChat('ai', `欢迎回来，${form.playerName}！当前比分 ${this.state.playerScore} : ${this.state.aiScore}，我们继续～`);
         } else {
-            ui.addChat('ai', `嗨，${form.playerName}！我们来玩特殊猜拳吧～规则很简单：每轮先各自说要出什么（可以骗对方或选择保密），再亮实际出拳，按实际的算输赢～你先说说，这轮打算宣告出什么呀？`);
+            ui.addChat('ai',
+                `嗨，${form.playerName}！我是这局的对手「${d.label}」——${d.blurb}。\n\n` +
+                '规则很简单，但有个关键点别搞错：\n' +
+                '1. 你先宣告要出什么（可以撒谎，也可以保密）\n' +
+                '2. 我会回应并宣告——但我的宣告会被锁住，你看不到\n' +
+                '3. 然后你才决定自己真正出什么\n' +
+                '4. 同时揭晓，按实际出拳算输赢\n\n' +
+                '也就是说：我说什么你听不见，你说什么我能听见。咱们都在赌对方是诚实还是在骗人。\n' +
+                '这轮你先说，打算宣告出什么呀？');
         }
     }
 
     resetGame() {
         this.state = blankState();
-        this.state.playerName = this.settings.playerName || '玩家';
+        this.state.playerName = (this.settings && this.settings.playerName) || '玩家';
         this.persist();
         ui.clearChat();
         ui.addChat('ai', '新的开始！这轮你打算宣告出什么呀？');
         ui.showPhase('declare');
         ui.updateScores(this.state);
         ui.renderHistory([]);
+        ui.renderProfile([]);
+        ui.renderAiHiddenNotice(false);
     }
 
     // ------------------------------------------------------------------
@@ -241,12 +143,18 @@ class RockPaperScissorsGame {
         const declaredMsg = ui.addChat('player', `我宣告要出：${ui.choiceText(choice)}`);
 
         try {
-            const move = await getAiMove(this.settings, this.buildContextMessage(choice));
+            const move = await getAiMove(this.settings, this.buildContextMessage(choice), this.settings.difficulty);
+
+            // 双盲承诺：aiDeclared / aiActual 在此锁定（防作弊时序不变），
+            // 但宣告一个字都不给玩家看——玩家在出实际拳之前不知道它。
+            // 只有 taunt 是立刻可见的。
             this.state.aiDeclared = move.declared;
-            this.state.aiActual = move.actual; // 锁定，待玩家出拳后揭晓
-            ui.addChat('ai', move.display);
+            this.state.aiActual = move.actual;
+
+            ui.addChat('ai', move.taunt);
             this.state.currentPhase = 'action';
             ui.showPhase('action');
+            ui.renderAiHiddenNotice(true);
         } catch (error) {
             console.error('AI 回应失败:', error);
             // 宣告已写入聊天流却不会结算，标成作废，避免玩家误读为两次宣告
@@ -262,33 +170,82 @@ class RockPaperScissorsGame {
         this.state.playerActual = null;
         this.state.aiDeclared = null;
         this.state.aiActual = null;
+        ui.renderAiHiddenNotice(false);
         ui.showPhase('declare');
     }
 
+    // ------------------------------------------------------------------
+    // 上下文构造：难度在这里生效
+    //
+    // 这是四个难度杠杆里最硬的一个——不是靠提示词说"你是高手"，
+    // 而是实打实地决定给模型看多少。新手机只拿到最近几轮结果，
+    // 读心者才拿到条件模式结论。
+    // ------------------------------------------------------------------
+
     buildContextMessage(playerDeclared) {
+        const d = DIFFICULTIES[this.settings.difficulty] || DIFFICULTIES[DEFAULT_DIFFICULTY];
+        const recent = this.state.history.slice(-CONTEXT_ROUNDS);
+        const tally = tallyHistory(recent);
+
         let context = `当前是第${this.state.round}轮。`;
 
-        const recent = this.state.history.slice(-CONTEXT_ROUNDS);
         if (recent.length > 0) {
-            // 战绩用结构化数字给出：比分、胜负、宣告与实际的偏差计数。
-            // 比散文摘要更省 token，也让模型能真的算出一致率。
-            const tally = tallyHistory(recent);
+            // 战绩：所有难度都给，这是它能"记着你"的基础
             context += `\n\n战绩：共 ${recent.length} 轮，你 ${tally.playerWins} 胜 ${tally.aiWins} 负 ${tally.draws} 平。`;
-            context += `\n宣告诚实度：${recent.length - tally.deceived}/${recent.length} 轮宣告与实际一致，你撒过 ${tally.deceived} 次谎。`;
-            context += `\n你的实际出拳分布：石头 ${tally.actual.rock} 次、布 ${tally.actual.paper} 次、剪刀 ${tally.actual.scissors} 次。`;
-            context += `\n你选择保密 ${tally.secrets} 次。`;
 
-            const patterns = describePatterns(tally);
-            if (patterns.length > 0) context += `\n你的出拳习惯：${patterns.join('；')}。`;
+            if (d.insight === 'none') {
+                // 新手机：只给原始明细，不给任何统计结论。
+                // 它"看得到"但"算不出"——这正是低难度该有的状态。
+                context += `\n\n最近 ${recent.length} 轮明细：`;
+                recent.forEach(record => {
+                    context += `\n第${record.round}轮: 你宣告${ui.choiceText(record.playerDeclared)}，实际出${ui.choiceText(record.playerActual)}；我宣告${ui.choiceText(record.aiDeclared)}，实际出${ui.choiceText(record.aiActual)}，结果：${record.result}`;
+                });
+            } else {
+                // 熟客 / 读心者：给结构化统计
+                context += `\n宣告诚实度：${recent.length - tally.deceived}/${recent.length} 轮宣告与实际一致，你撒过 ${tally.deceived} 次谎。`;
+                context += `\n你的实际出拳分布：石头 ${tally.actual.rock} 次、布 ${tally.actual.paper} 次、剪刀 ${tally.actual.scissors} 次。`;
+                context += `\n你选择保密 ${tally.secrets} 次。`;
 
-            context += `\n\n最近 ${recent.length} 轮明细：`;
-            recent.forEach(record => {
-                context += `\n第${record.round}轮: 玩家宣告${ui.choiceText(record.playerDeclared)}，实际出${ui.choiceText(record.playerActual)}；AI宣告${ui.choiceText(record.aiDeclared)}，实际出${ui.choiceText(record.aiActual)}，结果：${record.result}`;
-            });
+                if (d.insight === 'deep') {
+                    // 只有读心者拿到条件模式——"宣告石头时 80% 出布"这种
+                    const patterns = findPatterns(tally);
+                    const randomized = checkRandomized(tally);
+
+                    if (randomized) {
+                        // 玩家掺了随机：如实告诉 AI 它失效了，
+                        // 并要求它承认——否则它会假装看穿，实际在瞎猜。
+                        context += `\n\n【重要】你最近的出拳分布已经很均匀（最高占比仅 ${Math.round(randomized.maxShare * 100)}%），`;
+                        context += `你的规律分析对你已经失效了。请在 taunt 里承认你跟不上了，别装作看穿了。`;
+                    } else if (patterns.length > 0) {
+                        context += `\n\n【你的出拳规律，我已算出】\n`;
+                        patterns.forEach(p => { context += `- ${p.text}\n`; });
+                        context += `利用这些规律来选你的 actual，但记住我说的 misread 倾向——你也有约 `;
+                        context += `${Math.round(d.misreadRate * 100)}% 的概率看错。`;
+                    } else {
+                        // 样本还不够：如实说，别硬编规律
+                        context += `\n\n【我暂时看不出你的规律】样本还不够。这一轮请在 taunt 里承认你拿不准。`;
+                    }
+                } else {
+                    // 熟客：只给基础统计，不给结论
+                    const patterns = findPatterns(tally);
+                    if (patterns.length > 0) context += `\n出拳习惯：${patterns.map(p => p.text).join('；')}。`;
+                }
+
+                context += `\n\n最近 ${recent.length} 轮明细：`;
+                recent.forEach(record => {
+                    context += `\n第${record.round}轮: 你宣告${ui.choiceText(record.playerDeclared)}，实际出${ui.choiceText(record.playerActual)}；我宣告${ui.choiceText(record.aiDeclared)}，实际出${ui.choiceText(record.aiActual)}，结果：${record.result}`;
+                });
+            }
+        } else {
+            context += `\n\n这是第一轮，你还没有任何历史数据。不许假装你了解我。`;
         }
+
         context += `\n\n玩家刚刚宣告要出：${ui.choiceText(playerDeclared)}`;
-        context += `\n\n请按格式回应：1. 回应玩家的宣告并说出你的宣告；2. 结尾单独一行"我实际出：X"（X 只能是石头/布/剪刀）。`;
-        context += `\n注意：你给宣告之后，我才会决定自己实际出什么——所以你的宣告与实际出拳可以不一致，但反过来我猜不到你实际出什么。`;
+        context += `\n\n请只输出一个 JSON 对象（不要代码块围栏、不要额外说明）：`;
+        context += `\n{"taunt":"你对玩家说的话，一到两句","declared":"石头|布|剪刀|不告诉你","actual":"石头|布|剪刀"}`;
+        context += `\n\n再强调一次时序：你给出宣告和 actual 的那一刻就已经锁定了，`;
+        context += `玩家在你宣告之后才决定自己实际出什么。所以你的 declared 与 actual 可以不一致`;
+        context += `（这是核心，别老实地让它们一样），但你永远猜不到玩家实际出什么。`;
         return context;
     }
 
@@ -299,6 +256,7 @@ class RockPaperScissorsGame {
     handleAction(choice) {
         this.state.playerActual = choice;
         this.state.currentPhase = 'revealing';
+        ui.renderAiHiddenNotice(false);
         ui.showPhase('revealing');
         ui.addChat('ai', '3... 2... 1... 出拳！');
 
@@ -323,6 +281,8 @@ class RockPaperScissorsGame {
             ui.showPhase('result');
             ui.updateScores(this.state);
             ui.renderHistory(this.state.history);
+            // 画像每轮刷新：玩家能看见自己的规律正在被对手读出来
+            ui.renderProfile(this.state.history);
 
             this.checkAndShowMeme(result);
         }, 1500);
@@ -345,13 +305,14 @@ class RockPaperScissorsGame {
         const playerHonest = !playerSecret && s.playerDeclared === s.playerActual;
         const aiHonest = !aiSecret && s.aiDeclared === s.aiActual;
 
-        if (playerSecret && aiSecret) message += '哈哈，我们都选择了保密策略，真是心有灵犀！';
-        else if (playerSecret) message += '你选择了保密策略，很神秘呢！';
-        else if (aiSecret) message += '我这次选择保密，给你一个小惊喜～';
-        else if (playerHonest && aiHonest) message += '哈哈，我们都很诚实呢！';
-        else if (!playerHonest && !aiHonest) message += '哇，我们都在玩心理战术！';
-        else if (!playerHonest) message += '你这次选择了欺骗策略，有意思！';
-        else message += '我这次故意骗了你，嘿嘿～';
+        // 双盲下的措辞：你出拳时看不到我的宣告，所以你是"赌"而不是"信"。
+        if (playerSecret && aiSecret) message += '我们都保密了——那就纯猜拳吧！';
+        else if (playerSecret) message += '你保密了，可惜我这边可没瞒你（但你当时看不到）。';
+        else if (aiSecret) message += '我保密了，所以你刚才是闭眼出的拳吧？';
+        else if (playerHonest && aiHonest) message += '我们都说了实话，这局没骗到彼此。';
+        else if (!playerHonest && !aiHonest) message += '互相骗到了，心理战平手！';
+        else if (!playerHonest) message += '你撒了谎——我还按你说的去猜了，中招了！';
+        else message += '我骗到了你：我说宣告，实际可没跟着走。';
 
         message += '\n\n';
         const aiText = ui.choiceText(s.aiActual);
@@ -362,16 +323,22 @@ class RockPaperScissorsGame {
         return message;
     }
 
-    // 表情包彩蛋：只在 AI 获胜且 AI 明确宣告过时触发
+    // 表情包彩蛋：只在 AI 获胜时触发，且语义适配双盲——
+    // 原版是"AI 说真话你还上当了"（那时玩家看得见宣告才成立），
+    // 双盲后玩家本就知道宣告不可信，所以改为拿"你被我读懂了"来嘲讽。
     checkAndShowMeme(result) {
         if (result !== 'lose') return;
-        const { aiDeclared, aiActual } = this.state;
-        if (aiDeclared === 'secret' || aiDeclared === null) return;
+        const { aiDeclared, aiActual, playerDeclared, playerActual } = this.state;
         setTimeout(() => {
-            if (aiDeclared === aiActual) {
+            // AI 说谎却赢了 → 它成功利用了你的宣告
+            if (aiDeclared && aiDeclared !== 'secret' && aiDeclared !== aiActual) {
+                ui.showMemePopup('images/逗你.jpg', '逗逗你的啊');
+            } else if (playerDeclared && playerDeclared !== 'secret' && playerDeclared === playerActual) {
+                // 你诚实且输了 → 老实人挨打
                 ui.showMemePopup('images/你看.jpg', '你看, 说实话你都不信');
             } else {
-                ui.showMemePopup('images/逗你.jpg', '逗逗你的啊');
+                // 其余情况（多为 AI 保密）：换个不指责玩家的说法
+                ui.showMemePopup('images/逗你.jpg', '猜不到吧～');
             }
         }, 2000);
     }
@@ -386,9 +353,10 @@ class RockPaperScissorsGame {
         this.state.aiDeclared = null;
         this.state.aiActual = null;
         this.persist();
+        ui.renderAiHiddenNotice(false);
         ui.showPhase('declare');
         ui.updateScores(this.state);
-        ui.addChat('ai', '下一轮该你先宣告咯，这次想先说要出什么呀？');
+        ui.addChat('ai', '下一轮。先提醒一句：我会记住你之前的习惯，但你也别太机械——被我摸到规律就不好玩了。这轮你打算宣告什么？');
     }
 }
 

@@ -84,6 +84,19 @@ body {
 .rules-list li {
     margin: 10px 0;
     font-size: 1.1rem;
+    line-height: 1.5;
+}
+
+.rules-asymmetry {
+    margin: 0 0 4px;
+    padding: 12px 16px;
+    background: #f4f4ff;
+    border-left: 4px solid #667eea;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    color: #4c4fb0;
+    line-height: 1.55;
+    text-align: left;
 }
 
 .config-section {
@@ -289,7 +302,9 @@ body {
 /* 对话区域 */
 .chat-area {
     margin-bottom: 30px;
-    max-height: 200px;
+    /* 320px：AI 的 taunt 是它的人格所在，压太窄会被截断，
+       而双盲之后 taunt 是玩家仅剩的信息来源，更不该看不全 */
+    max-height: 320px;
     overflow-y: auto;
     border: 2px solid #f0f0f0;
     border-radius: 10px;
@@ -481,6 +496,45 @@ body {
     100% { transform: rotate(360deg); }
 }
 
+/* 双盲承诺：出拳阶段的关键提示 */
+.blind-hint {
+    display: none;
+    align-items: center;
+    gap: 12px;
+    max-width: 520px;
+    margin: 0 auto 22px;
+    padding: 14px 18px;
+    background: #fff8e1;
+    border: 1px solid #ffe082;
+    border-left: 4px solid #ffb300;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    line-height: 1.55;
+    color: #6d4c00;
+    text-align: left;
+}
+.blind-hint.active {
+    display: flex;
+}
+.blind-hint strong {
+    color: #b3541e;
+}
+.blind-icon {
+    font-size: 1.4rem;
+    flex-shrink: 0;
+}
+
+/* 揭晓时的对照说明 */
+.battle-reveal-note {
+    margin-bottom: 14px;
+    padding: 10px 16px;
+    background: #eef2ff;
+    border: 1px solid #c7d2fe;
+    border-radius: 10px;
+    font-size: 0.85rem;
+    color: #3730a3;
+}
+
 /* 战斗结果 */
 .battle-result {
     text-align: center;
@@ -618,6 +672,133 @@ body {
     color: #666;
 }
 
+/* ---------------------------------------------------------------------------
+   博弈画像
+   --------------------------------------------------------------------------- */
+
+.profile-hint {
+    font-size: 0.8rem;
+    color: #888;
+    line-height: 1.5;
+    margin-bottom: 14px;
+}
+
+.profile-empty {
+    font-size: 0.85rem;
+    color: #999;
+    line-height: 1.5;
+    margin: 0;
+}
+
+.profile-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 12px;
+    padding: 7px 0;
+    border-bottom: 1px solid #ececec;
+    font-size: 0.85rem;
+}
+
+.profile-label {
+    color: #777;
+    flex-shrink: 0;
+}
+
+.profile-value {
+    color: #333;
+    text-align: right;
+}
+
+.profile-row.tone-warn .profile-value { color: #b3541e; }
+.profile-row.tone-ok .profile-value { color: #2e7d32; }
+
+.profile-dist {
+    margin: 14px 0;
+    padding: 12px 14px;
+    background: white;
+    border-radius: 8px;
+}
+
+.profile-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 7px;
+    font-size: 0.82rem;
+}
+
+.profile-bar-row:last-child {
+    margin-bottom: 0;
+}
+
+.profile-bar-row .profile-label {
+    width: 32px;
+    flex-shrink: 0;
+    color: #666;
+}
+
+.profile-track {
+    flex: 1;
+    height: 8px;
+    background: #eee;
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.profile-fill {
+    display: block;
+    height: 100%;
+    border-radius: 4px;
+    background: #667eea;
+    transition: width 0.3s ease;
+}
+
+.profile-fill.fill-rock { background: #7f77dd; }
+.profile-fill.fill-paper { background: #1d9e75; }
+.profile-fill.fill-scissors { background: #d85a30; }
+
+.profile-count {
+    width: 20px;
+    text-align: right;
+    color: #999;
+    font-size: 0.78rem;
+    flex-shrink: 0;
+}
+
+.profile-section-title {
+    font-size: 0.78rem;
+    color: #999;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    margin-bottom: 8px;
+}
+
+.profile-pattern {
+    padding: 9px 12px;
+    margin-bottom: 7px;
+    background: white;
+    border-left: 3px solid #bbb;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.82rem;
+    color: #555;
+    line-height: 1.5;
+}
+
+.profile-pattern.tone-warn { border-left-color: #ffb300; color: #8a5a00; }
+.profile-pattern.tone-danger { border-left-color: #e24b4a; color: #a13030; }
+.profile-pattern.tone-ok { border-left-color: #1d9e75; color: #1a6b4c; }
+
+.profile-tip {
+    margin: 12px 0 0;
+    padding: 10px 12px;
+    background: #f4f4ff;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    color: #5a5db0;
+    line-height: 1.55;
+}
+
 /* 模态框 */
 .modal {
     display: none;
@@ -716,44 +897,38 @@ body {
 /* 表情包弹出样式 */
 .meme-popup {
     position: fixed;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) scale(0) rotate(-10deg);
+    top: 16px;
+    right: 16px;
+    transform: translateX(120%) rotate(6deg);
     z-index: 2000;
     background: white;
-    border-radius: 20px;
-    padding: 30px;
-    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+    border-radius: 16px;
+    padding: 14px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.18);
     text-align: center;
-    max-width: 400px;
+    width: 200px;
     opacity: 0;
-    transition: all 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
-    border: 3px solid #ff6b9d;
+    transition: transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.3s;
+    border: 2px solid #ff6b9d;
 }
 
 .meme-popup.show {
-    transform: translate(-50%, -50%) scale(1) rotate(0deg);
+    transform: translateX(0) rotate(0deg);
     opacity: 1;
-    animation: bounce 0.6s ease-out 0.5s;
+    animation: meme-in 0.5s ease-out 0.4s;
 }
 
-@keyframes bounce {
-    0%, 20%, 50%, 80%, 100% {
-        transform: translate(-50%, -50%) scale(1) rotate(0deg);
-    }
-    40% {
-        transform: translate(-50%, -50%) scale(1.05) rotate(1deg);
-    }
-    60% {
-        transform: translate(-50%, -50%) scale(1.02) rotate(-0.5deg);
-    }
+@keyframes meme-in {
+    0%, 20%, 50%, 80%, 100% { transform: translateX(0) rotate(0deg); }
+    40% { transform: translateX(0) rotate(2deg); }
+    60% { transform: translateX(0) rotate(-1deg); }
 }
 
 .meme-popup img {
-    width: 220px;
-    height: 220px;
+    width: 172px;
+    height: 172px;
     object-fit: cover;
-    border-radius: 15px;
+    border-radius: 12px;
     margin-bottom: 20px;
     box-shadow: 0 10px 30px rgba(0,0,0,0.2);
     transition: transform 0.3s ease;
@@ -794,23 +969,25 @@ body {
     box-shadow: 0 10px 25px rgba(0,0,0,0.3);
 }
 
+/* 表情包：右上角浮层，不阻断操作
+   原来是全屏遮罩 + 必须手动关闭，会挡住「下一轮」——
+   在需要连续多轮的博弈游戏里，打断节奏比没有嘲讽更伤。 */
 .meme-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background: rgba(0,0,0,0.6);
+    inset: 0;
     z-index: 1999;
     opacity: 0;
     visibility: hidden;
-    transition: all 0.3s;
-    backdrop-filter: blur(3px);
+    pointer-events: none;
+    background: transparent;
+    transition: opacity 0.3s;
 }
 
 .meme-overlay.show {
     opacity: 1;
     visibility: visible;
+    /* 只允许点击自身空白处关闭，不吃子元素的点击 */
+    pointer-events: auto;
 }
 
 /* 响应式表情包 */
@@ -866,4 +1043,88 @@ body {
     text-align: left;
     margin: 4px 0 12px;
     line-height: 1.4;
+}
+
+/* ---------------------------------------------------------------------------
+   难度选择
+   三张并排卡片，选中态用主色描边 + 浅底。
+   --------------------------------------------------------------------------- */
+
+.difficulty-section {
+    margin: 16px 0 20px;
+    text-align: left;
+}
+
+.difficulty-label {
+    display: block;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #444;
+    margin-bottom: 10px;
+}
+
+.difficulty-options {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+}
+
+.difficulty-opt {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 12px 10px;
+    background: white;
+    border: 1.5px solid #e0e0e0;
+    border-radius: 12px;
+    cursor: pointer;
+    text-align: center;
+    font-family: inherit;
+    transition: border-color 0.18s ease, background 0.18s ease, transform 0.12s ease;
+}
+
+.difficulty-opt:hover {
+    border-color: #b8b8d8;
+    transform: translateY(-1px);
+}
+
+.difficulty-opt.active {
+    border-color: #667eea;
+    background: #f4f4ff;
+    box-shadow: 0 2px 10px rgba(102, 126, 234, 0.18);
+}
+
+.difficulty-opt:focus-visible {
+    outline: 2px solid #667eea;
+    outline-offset: 2px;
+}
+
+.difficulty-name {
+    font-size: 0.98rem;
+    font-weight: 600;
+    color: #333;
+}
+
+.difficulty-opt.active .difficulty-name {
+    color: #4c4fb0;
+}
+
+.difficulty-blurb {
+    font-size: 0.76rem;
+    color: #888;
+    line-height: 1.4;
+}
+
+.difficulty-note {
+    margin: 10px 0 0;
+    font-size: 0.8rem;
+    color: #777;
+    line-height: 1.5;
+    min-height: 2.4em;
+}
+
+@media (max-width: 520px) {
+    .difficulty-options {
+        grid-template-columns: 1fr;
+    }
 }
